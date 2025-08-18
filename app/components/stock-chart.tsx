@@ -8,9 +8,11 @@ import { curveMonotoneX } from '@visx/curve';
 import { timeFormat } from 'd3-time-format';
 import { extent } from 'd3-array';
 import type { StockData } from '../types/stock';
+import type { ActiveWatchlistRow } from '../types/database';
 
 interface StockChartProps {
   stockData: StockData;
+  watchlistEntry?: ActiveWatchlistRow;
   color?: string;
 }
 
@@ -18,6 +20,7 @@ const margin = { top: 15, right: 15, bottom: 30, left: 50 };
 
 export function StockChart({ 
   stockData, 
+  watchlistEntry,
   color = '#3B82F6'
 }: StockChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,6 +74,38 @@ export function StockChart({
   const firstPrice = data[0]?.price;
   const change = latestPrice && firstPrice ? latestPrice - firstPrice : 0;
   const changePercent = firstPrice ? (change / firstPrice) * 100 : 0;
+
+  // Calculate price change since added to watchlist
+  let priceAtAdded = firstPrice;
+  let changeSinceAdded = 0;
+  let changePercentSinceAdded = 0;
+  
+  if (watchlistEntry && latestPrice) {
+    const addedDate = new Date(watchlistEntry.added_date);
+    
+    // Find the closest trading day to when the ticker was added
+    // Sort data by date and find the first trading day on or after the added date
+    const sortedData = [...data].sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    // Find the trading day closest to (but not before) the added date
+    let addedBar = sortedData.find(d => d.date >= addedDate);
+    
+    // If no data on or after added date, use the last available data point
+    if (!addedBar && sortedData.length > 0) {
+      addedBar = sortedData[sortedData.length - 1];
+    }
+    
+    // If still no data found, fallback to first data point
+    if (!addedBar && sortedData.length > 0) {
+      addedBar = sortedData[0];
+    }
+    
+    if (addedBar) {
+      priceAtAdded = addedBar.price;
+      changeSinceAdded = latestPrice - priceAtAdded;
+      changePercentSinceAdded = priceAtAdded ? (changeSinceAdded / priceAtAdded) * 100 : 0;
+    }
+  }
 
   // Chart dimensions
   const { width, height } = dimensions;
@@ -169,6 +204,24 @@ export function StockChart({
           </Group>
         </svg>
       </div>
+
+      {/* Footer with watchlist info */}
+      {watchlistEntry && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex justify-between items-center text-xs text-gray-600">
+            <div>
+              <span className="text-gray-500">Added:</span>{' '}
+              {new Date(watchlistEntry.added_date).toLocaleDateString()}
+            </div>
+            <div className="text-right">
+              <div className="text-gray-500 mb-1">Since added:</div>
+              <div className={`font-medium px-2 py-1 rounded bg-gray-100 ${changeSinceAdded >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {changeSinceAdded >= 0 ? '+' : ''}${changeSinceAdded.toFixed(2)} ({changeSinceAdded >= 0 ? '+' : ''}{changePercentSinceAdded.toFixed(1)}%)
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
