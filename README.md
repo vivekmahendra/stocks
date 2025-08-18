@@ -1,18 +1,17 @@
-# Welcome to React Router!
+# Stocks Dashboard
 
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+A comprehensive web application for tracking, monitoring, and researching investments. Live at [stocks.vivekmahendra.com](https://stocks.vivekmahendra.com).
 
 ## Features
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- 📊 Real-time portfolio tracking and performance metrics
+- 📈 Interactive charts and technical analysis tools
+- 💹 Market overview with major indices and trends
+- 📰 Latest financial news and market updates
+- 🔍 Stock research and screening capabilities
+- 📱 Responsive design for desktop and mobile
+- 🚀 Built with React Router, TypeScript, and TailwindCSS
+- 🔄 Paper trading integration (coming soon with Alpaca API)
 
 ## Getting Started
 
@@ -42,46 +41,69 @@ Create a production build:
 npm run build
 ```
 
+## Environment Configuration
+
+Create a `.env` file in the root directory with the following variables:
+
+```bash
+# Alpaca API Configuration (for paper trading)
+ALPACA_API_KEY=your_api_key_here
+ALPACA_API_SECRET=your_api_secret_here
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
+
+# Additional API Keys
+# Add other financial data API keys as needed
+```
+
 ## Deployment
+
+The application is deployed at [stocks.vivekmahendra.com](https://stocks.vivekmahendra.com).
 
 ### Docker Deployment
 
-To build and run using Docker:
+```bash
+docker build -t stocks-dashboard .
+docker run -p 3000:3000 stocks-dashboard
+```
+
+### Production Build
 
 ```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
+npm run build
+npm run start
 ```
 
-The containerized application can be deployed to any platform that supports Docker, including:
+## Tech Stack
 
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
+- **Frontend Framework**: React with React Router
+- **Language**: TypeScript
+- **Styling**: TailwindCSS
+- **Charts**: Recharts (to be added)
+- **API Integration**: Alpaca API for paper trading
+- **Build Tool**: Vite
+- **Deployment**: Docker-ready
 
-### DIY Deployment
+## Roadmap
 
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
+- [x] Initial project setup
+- [ ] Dashboard layout and navigation
+- [ ] Portfolio tracking functionality
+- [ ] Stock watchlist feature
+- [ ] Real-time price updates
+- [ ] Alpaca API integration
+- [ ] Paper trading interface
+- [ ] Advanced charting tools
+- [ ] News feed integration
+- [ ] Mobile app version
 
-Make sure to deploy the output of `npm run build`
+## Contributing
 
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Styling
+## License
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+Private project - All rights reserved
 
 ---
 
-Built with ❤️ using React Router.
+Built with React Router and optimized for investment tracking.
