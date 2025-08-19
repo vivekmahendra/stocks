@@ -52,6 +52,7 @@ export interface Database {
           sort_order: number;
           created_at: string;
           updated_at: string;
+          price_at_addition: number | null;
         };
         Insert: {
           id?: number;
@@ -62,6 +63,7 @@ export interface Database {
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
+          price_at_addition?: number | null;
         };
         Update: {
           id?: number;
@@ -72,6 +74,7 @@ export interface Database {
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
+          price_at_addition?: number | null;
         };
       };
       ticker_notes: {
@@ -111,6 +114,7 @@ export interface Database {
           sort_order: number;
           created_at: string;
           updated_at: string;
+          price_at_addition: number | null;
         };
       };
     };

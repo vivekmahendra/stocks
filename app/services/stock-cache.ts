@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../lib/supabase';
 import type { StockBarInsert, StockBarRow } from '../types/database';
 import type { StockBar, StockData } from '../types/stock';
 import { createAlpacaAPI } from '../lib/alpaca-api';
+import { getMarketTime, getMostRecentTradingDay, isMarketOpen } from '../lib/market-time';
 
 export class StockCacheService {
   /**
@@ -11,7 +12,8 @@ export class StockCacheService {
     symbols: string[],
     startDate: Date,
     endDate: Date,
-    timeframe = '1Day'
+    timeframe = '1Day',
+    forceRefresh = false
   ): Promise<{ data: StockData[], loadedFromCache: boolean }> {
     console.log('📊 Stock Cache: Fetching data for', symbols);
     
@@ -19,38 +21,70 @@ export class StockCacheService {
     const symbolsNeedingApiData: string[] = [];
     let loadedFromCache = true;
     
+    // If force refresh, clear today's cached data first
+    if (forceRefresh) {
+      const today = new Date().toISOString().split('T')[0];
+      console.log(`🔄 Force refresh enabled, clearing cache for ${today}`);
+      
+      for (const symbol of symbols) {
+        const { error } = await supabaseAdmin
+          .from('stock_bars')
+          .delete()
+          .eq('symbol', symbol)
+          .eq('timeframe', timeframe)
+          .gte('timestamp', today);
+        
+        if (error) {
+          console.error(`Error clearing today's cache for ${symbol}:`, error);
+        }
+      }
+    }
+    
     // Step 1: Check what data we have in cache for each symbol
     for (const symbol of symbols) {
-      const cachedData = await this.getCachedData(symbol, startDate, endDate, timeframe);
-      
-      if (cachedData.length > 0) {
-        console.log(`✅ Cache hit for ${symbol}: ${cachedData.length} bars`);
-        results.push({
-          symbol,
-          bars: cachedData,
-        });
-        
-        // Check if we have complete data for the date range
-        const hasCompleteData = await this.hasCompleteDataRange(
-          symbol,
-          startDate,
-          endDate,
-          cachedData,
-          timeframe
-        );
-        
-        if (!hasCompleteData) {
-          const firstBar = new Date(cachedData[0].t);
-          const lastBar = new Date(cachedData[cachedData.length - 1].t);
-          console.log(`⚠️ Incomplete data for ${symbol}:`);
-          console.log(`   Requested: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
-          console.log(`   Cached: ${firstBar.toISOString().split('T')[0]} to ${lastBar.toISOString().split('T')[0]}`);
-          console.log(`   Will fetch missing data from API`);
-          symbolsNeedingApiData.push(symbol);
+      if (forceRefresh) {
+        console.log(`🔄 Force refresh enabled for ${symbol}, will fetch from API`);
+        symbolsNeedingApiData.push(symbol);
+        // Still get historical cached data for display while we fetch new data
+        const cachedData = await this.getCachedData(symbol, startDate, endDate, timeframe);
+        if (cachedData.length > 0) {
+          results.push({
+            symbol,
+            bars: cachedData,
+          });
         }
       } else {
-        console.log(`❌ Cache miss for ${symbol}`);
-        symbolsNeedingApiData.push(symbol);
+        const cachedData = await this.getCachedData(symbol, startDate, endDate, timeframe);
+        
+        if (cachedData.length > 0) {
+          console.log(`✅ Cache hit for ${symbol}: ${cachedData.length} bars`);
+          results.push({
+            symbol,
+            bars: cachedData,
+          });
+          
+          // Check if we have complete data for the date range
+          const hasCompleteData = await this.hasCompleteDataRange(
+            symbol,
+            startDate,
+            endDate,
+            cachedData,
+            timeframe
+          );
+          
+          if (!hasCompleteData) {
+            const firstBar = new Date(cachedData[0].t);
+            const lastBar = new Date(cachedData[cachedData.length - 1].t);
+            console.log(`⚠️ Incomplete data for ${symbol}:`);
+            console.log(`   Requested: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+            console.log(`   Cached: ${firstBar.toISOString().split('T')[0]} to ${lastBar.toISOString().split('T')[0]}`);
+            console.log(`   Will fetch missing data from API`);
+            symbolsNeedingApiData.push(symbol);
+          }
+        } else {
+          console.log(`❌ Cache miss for ${symbol}`);
+          symbolsNeedingApiData.push(symbol);
+        }
       }
     }
     
@@ -227,12 +261,41 @@ export class StockCacheService {
     
     const firstBar = new Date(cachedData[0].t);
     const lastBar = new Date(cachedData[cachedData.length - 1].t);
+    const now = new Date();
     
-    // Allow for weekends and holidays - if we have data within 5 days of start/end, consider it complete
+    // Use market time utilities for better accuracy
+    const marketTime = getMarketTime();
+    const mostRecentTradingDay = getMostRecentTradingDay();
+    const marketIsOpen = isMarketOpen();
+    
+    // We need today's data if:
+    // 1. Market is currently open, OR
+    // 2. Market has closed today (after 4 PM on a trading day)
+    const marketHour = marketTime.getHours();
+    const needsTodayData = marketIsOpen || (marketHour >= 16 && mostRecentTradingDay.toDateString() === marketTime.toDateString());
+    
+    // For end date check:
+    // - If we need today's data and last bar is not from today, data is incomplete
+    // - Otherwise allow for weekends (up to 3 days for long weekends)
+    if (needsTodayData) {
+      const lastBarDate = lastBar.toISOString().split('T')[0];
+      const todayDate = mostRecentTradingDay.toISOString().split('T')[0];
+      
+      // If we're requesting data up to today but don't have today's data, it's incomplete
+      if (endDate.toISOString().split('T')[0] === todayDate && lastBarDate !== todayDate) {
+        console.log(`📊 Cache incomplete for ${symbol}: Need trading day data (${todayDate}) but have up to ${lastBarDate}`);
+        return false;
+      }
+    }
+    
+    // Allow for weekends and holidays - if we have data within 3 days of start/end, consider it complete
     const startDiff = Math.abs(firstBar.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     const endDiff = Math.abs(lastBar.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24);
     
-    return startDiff <= 5 && endDiff <= 5;
+    // More strict for recent data, more lenient for historical data
+    const maxEndDiff = needsTodayData ? 0 : 3; // If we need today's data, must be exact; otherwise allow 3 days
+    
+    return startDiff <= 5 && endDiff <= maxEndDiff;
   }
   
   /**

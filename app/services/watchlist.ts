@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabase';
 import type { WatchlistRow, WatchlistInsert, WatchlistUpdate, ActiveWatchlistRow } from '../types/database';
+import { createAlpacaAPI } from '../lib/alpaca-api';
 
 export class WatchlistService {
   /**
@@ -48,6 +49,35 @@ export class WatchlistService {
   async addSymbol(symbol: string, name?: string): Promise<WatchlistRow | null> {
     const upperSymbol = symbol.toUpperCase();
     
+    // Try to fetch current price
+    let currentPrice: number | null = null;
+    try {
+      const apiKey = process.env.ALPACA_API_KEY;
+      const secretKey = process.env.ALPACA_SECRET_KEY;
+      
+      if (apiKey && secretKey) {
+        const alpacaAPI = createAlpacaAPI(apiKey, secretKey);
+        // Get just 1 day of data to get the latest price
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 5); // Go back 5 days to ensure we get data
+        
+        const stockData = await alpacaAPI.getStockBars([upperSymbol], '1Day', startDate, endDate, 5);
+        
+        if (stockData.length > 0 && stockData[0].bars.length > 0) {
+          // Get the most recent closing price
+          const bars = stockData[0].bars.sort((a, b) => 
+            new Date(b.t).getTime() - new Date(a.t).getTime()
+          );
+          currentPrice = bars[0].c;
+          console.log(`💰 Current price for ${upperSymbol}: $${currentPrice}`);
+        }
+      }
+    } catch (error) {
+      console.error(`⚠️ Could not fetch current price for ${upperSymbol}:`, error);
+      // Continue without price - not critical
+    }
+    
     // First, check if the symbol already exists (including inactive ones)
     const { data: existingData } = await supabaseAdmin
       .from('watchlist')
@@ -56,12 +86,13 @@ export class WatchlistService {
       .single();
 
     if (existingData) {
-      // Symbol exists, reactivate it
+      // Symbol exists, reactivate it and update price
       const { data, error } = await supabaseAdmin
         .from('watchlist')
         .update({ 
           is_active: true,
           name: name || existingData.name, // Update name if provided, keep existing otherwise
+          price_at_addition: currentPrice || existingData.price_at_addition, // Update price if we got it
           updated_at: new Date().toISOString()
         })
         .eq('symbol', upperSymbol)
@@ -73,7 +104,7 @@ export class WatchlistService {
         return null;
       }
 
-      console.log(`✅ Reactivated ${upperSymbol} in watchlist`);
+      console.log(`✅ Reactivated ${upperSymbol} in watchlist with price: $${currentPrice || 'unknown'}`);
       return data;
     } else {
       // Symbol doesn't exist, create new entry
@@ -91,6 +122,7 @@ export class WatchlistService {
         name,
         sort_order: nextSortOrder,
         is_active: true,
+        price_at_addition: currentPrice,
       };
 
       const { data, error } = await supabaseAdmin
@@ -104,7 +136,7 @@ export class WatchlistService {
         return null;
       }
 
-      console.log(`✅ Added ${upperSymbol} to watchlist`);
+      console.log(`✅ Added ${upperSymbol} to watchlist with price: $${currentPrice || 'unknown'}`);
       return data;
     }
   }

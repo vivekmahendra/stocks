@@ -11,12 +11,14 @@ import { Form, useSubmit, useNavigation, Link } from 'react-router';
 import { CompanyLogo } from './company-logo';
 import type { StockData } from '../types/stock';
 import type { ActiveWatchlistRow } from '../types/database';
+import { parseAlpacaDate, isTradingDay, formatMarketDate, isWeekend } from '../lib/market-time';
 
 interface StockChartProps {
   stockData: StockData;
   watchlistEntry?: ActiveWatchlistRow;
   logoUrl?: string | null;
   color?: string;
+  chartDateRange?: { startDate: Date; endDate: Date } | null;
 }
 
 const margin = { top: 10, right: 10, bottom: 20, left: 40 };
@@ -25,7 +27,8 @@ export function StockChart({
   stockData, 
   watchlistEntry,
   logoUrl,
-  color = '#3B82F6'
+  color = '#3B82F6',
+  chartDateRange
 }: StockChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 240, height: 160 });
@@ -77,51 +80,111 @@ export function StockChart({
     );
   }
 
-  // Sort bars by date and prepare data
+  // Sort bars by date and prepare data with proper timezone handling
   const sortedBars = [...stockData.bars].sort((a, b) => 
     new Date(a.t).getTime() - new Date(b.t).getTime()
   );
 
-  const data = sortedBars.map(bar => ({
-    date: new Date(bar.t),
-    price: bar.c,
-  }));
+  // Use all data for price calculations (latest price, since added)
+  // Parse Alpaca dates properly and filter to trading days only
+  console.log(`🔍 ${stockData.symbol} - Processing ${sortedBars.length} total bars from API`);
+  
+  const allDataBeforeFilter = sortedBars.map(bar => {
+    const parsedDate = parseAlpacaDate(bar.t);
+    return {
+      date: parsedDate,
+      price: bar.c,
+      originalTimestamp: bar.t,
+    };
+  });
 
-  // Calculate price change
-  const latestPrice = data[data.length - 1]?.price;
-  const firstPrice = data[0]?.price;
-  const change = latestPrice && firstPrice ? latestPrice - firstPrice : 0;
-  const changePercent = firstPrice ? (change / firstPrice) * 100 : 0;
+  console.log(`📊 ${stockData.symbol} - Before filtering: ${allDataBeforeFilter.length} bars`);
+  
+  const allData = allDataBeforeFilter.filter(d => {
+    const isTrading = isTradingDay(d.date);
+    const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.date.getUTCDay()];
+    const weekendCheck = isWeekend(d.date);
+    console.log(`📅 ${stockData.symbol} - ${formatMarketDate(d.date)} (${dayName}, UTC day ${d.date.getUTCDay()}) - Weekend: ${weekendCheck}, Trading day: ${isTrading}`);
+    
+    if (!isTrading) {
+      console.log(`🚫 ${stockData.symbol} - FILTERING OUT ${formatMarketDate(d.date)} (${dayName})`);
+    }
+    
+    return isTrading;
+  });
+  
+  console.log(`📊 ${stockData.symbol} - After filtering: ${allData.length} bars (removed ${allDataBeforeFilter.length - allData.length} non-trading days)`);
+  
+  // Log final data that will be displayed
+  allData.forEach((d, i) => {
+    const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.date.getUTCDay()];
+    console.log(`✅ ${stockData.symbol} - Final data ${i + 1}: ${formatMarketDate(d.date)} (${dayName})`);
+  });
+
+  // Filter data for chart display based on chartDateRange
+  let chartData = allData;
+  if (chartDateRange) {
+    chartData = allData.filter(d => 
+      d.date >= chartDateRange.startDate && d.date <= chartDateRange.endDate
+    );
+  }
+
+  // Use chart data for display, all data for calculations
+  const data = chartData;
+
+  // Calculate price change - use latest available price from all data, chart range for period change
+  const latestPrice = allData[allData.length - 1]?.price; // Latest available price
+  const chartFirstPrice = data[0]?.price; // First price in chart range
+  const change = latestPrice && chartFirstPrice ? latestPrice - chartFirstPrice : 0;
+  const changePercent = chartFirstPrice ? (change / chartFirstPrice) * 100 : 0;
 
   // Calculate price change since added to watchlist
-  let priceAtAdded = firstPrice;
+  let priceAtAdded = chartFirstPrice;
   let changeSinceAdded = 0;
   let changePercentSinceAdded = 0;
   
   if (watchlistEntry && latestPrice) {
-    const addedDate = new Date(watchlistEntry.added_date);
-    
-    // Find the closest trading day to when the ticker was added
-    // Sort data by date and find the first trading day on or after the added date
-    const sortedData = [...data].sort((a, b) => a.date.getTime() - b.date.getTime());
-    
-    // Find the trading day closest to (but not before) the added date
-    let addedBar = sortedData.find(d => d.date >= addedDate);
-    
-    // If no data on or after added date, use the last available data point
-    if (!addedBar && sortedData.length > 0) {
-      addedBar = sortedData[sortedData.length - 1];
-    }
-    
-    // If still no data found, fallback to first data point
-    if (!addedBar && sortedData.length > 0) {
-      addedBar = sortedData[0];
-    }
-    
-    if (addedBar) {
-      priceAtAdded = addedBar.price;
+    // First check if we have a stored price_at_addition
+    if (watchlistEntry.price_at_addition) {
+      priceAtAdded = watchlistEntry.price_at_addition;
       changeSinceAdded = latestPrice - priceAtAdded;
       changePercentSinceAdded = priceAtAdded ? (changeSinceAdded / priceAtAdded) * 100 : 0;
+      console.log(`📊 ${stockData.symbol} - Using stored price: $${priceAtAdded} (current: $${latestPrice.toFixed(2)}, change: ${changePercentSinceAdded.toFixed(2)}%)`);
+    } else {
+      // Fallback to finding price from historical data
+      const addedDate = new Date(watchlistEntry.added_date);
+      const addedDateStr = addedDate.toISOString().split('T')[0];
+      
+      console.log(`📊 ${stockData.symbol} - Finding price when added on ${addedDateStr} (no stored price)`);
+      
+      // Find the closest trading day to when the ticker was added using all available data
+      const sortedAllData = [...allData].sort((a, b) => a.date.getTime() - b.date.getTime());
+      
+      // Try to find exact date match first (comparing market dates)
+      let addedBar = sortedAllData.find(d => {
+        const barDateStr = formatMarketDate(d.date).replace('/', '').padStart(4, '0');
+        const targetDateStr = formatMarketDate(addedDate).replace('/', '').padStart(4, '0');
+        return barDateStr === targetDateStr;
+      });
+      
+      if (!addedBar) {
+        // Find the closest trading day on or after the added date
+        addedBar = sortedAllData.find(d => d.date >= addedDate);
+      }
+      
+      if (!addedBar && sortedAllData.length > 0) {
+        // If no data after added date, use the last available before it
+        const reversedData = [...sortedAllData].reverse();
+        addedBar = reversedData.find(d => d.date <= addedDate);
+      }
+      
+      if (addedBar) {
+        priceAtAdded = addedBar.price;
+        changeSinceAdded = latestPrice - priceAtAdded;
+        changePercentSinceAdded = priceAtAdded ? (changeSinceAdded / priceAtAdded) * 100 : 0;
+        const foundDateStr = formatMarketDate(addedBar.date);
+        console.log(`   💰 Found historical price: $${priceAtAdded.toFixed(2)} on ${foundDateStr} (change: ${changePercentSinceAdded.toFixed(2)}%)`);
+      }
     }
   }
 
@@ -234,7 +297,7 @@ export function StockChart({
               <AxisBottom
                 top={innerHeight}
                 scale={xScale}
-                tickFormat={(value) => timeFormat('%m/%d')(value as Date)}
+                tickFormat={(value) => formatMarketDate(value as Date, 'short')}
                 stroke="#d1d5db"
                 tickStroke="#d1d5db"
                 numTicks={3}

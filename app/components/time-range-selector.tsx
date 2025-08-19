@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router";
+import { getMarketTime } from "../lib/market-time";
 
 interface TimeRange {
   label: string;
@@ -53,8 +54,8 @@ export function TimeRangeSelector() {
 }
 
 export function getDateRangeFromParam(rangeParam: string | null): { startDate: Date; endDate: Date } {
-  const endDate = new Date();
-  const startDate = new Date();
+  const endDate = getMarketTime(); // Use market time instead of system time
+  const startDate = new Date(endDate);
   
   const range = timeRanges.find(r => r.value === rangeParam) || timeRanges.find(r => r.value === "3M")!;
   

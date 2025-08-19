@@ -5,6 +5,7 @@ import { TickerNotes } from "../components/ticker-notes";
 import { TimeRangeSelector, getDateRangeFromParam } from "../components/time-range-selector";
 import { Layout } from "../components/layout";
 import { CompanyLogo } from "../components/company-logo";
+import { BerkshireHathawayPage } from "../components/berkshire-hathaway-page";
 import { stockCacheService } from "../services/stock-cache";
 import { watchlistService } from "../services/watchlist";
 import { notesService } from "../services/notes";
@@ -12,9 +13,18 @@ import { getLogoService } from "../services/logo";
 import type { StockData } from "../types/stock";
 
 export function meta({ params }: Route.MetaArgs) {
+  const symbol = params.symbol?.toUpperCase();
+  
+  if (symbol === 'BRK.B') {
+    return [
+      { title: "Berkshire Hathaway Class B (BRK.B) - Investment Conglomerate" },
+      { name: "description", content: "Warren Buffett's Berkshire Hathaway Class B shares - Comprehensive analysis of the legendary investment conglomerate" },
+    ];
+  }
+  
   return [
-    { title: `${params.symbol?.toUpperCase()} - Stock Dashboard` },
-    { name: "description", content: `Detailed analysis and insights for ${params.symbol?.toUpperCase()}` },
+    { title: `${symbol} - Stock Dashboard` },
+    { name: "description", content: `Detailed analysis and insights for ${symbol}` },
   ];
 }
 
@@ -104,6 +114,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!symbol) {
     throw new Response("Symbol not found", { status: 404 });
   }
+
 
   console.log(`🔄 Loading ticker detail for ${symbol}`);
 
@@ -196,8 +207,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 }
 
+
 export default function TickerDetail() {
   const { symbol, stockData, watchlistEntry, notes, logoUrl, companyNarrative, dateRange, loadSource, loadTime, error } = useLoaderData<typeof loader>();
+
+  // If this is BRK.B, render the completely different Berkshire page
+  if (symbol === 'BRK.B') {
+    return <BerkshireHathawayPage 
+      symbol={symbol}
+      stockData={stockData}
+      watchlistEntry={watchlistEntry}
+      notes={notes}
+      logoUrl={logoUrl}
+      companyNarrative={companyNarrative}
+      dateRange={dateRange}
+      loadSource={loadSource}
+      loadTime={loadTime}
+      error={error}
+    />;
+  }
 
   if (error || !stockData) {
     return (

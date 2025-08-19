@@ -10,6 +10,7 @@ import { extent, bisector } from 'd3-array';
 import { CompanyLogo } from './company-logo';
 import { TimeRangeSelector } from './time-range-selector';
 import { calculateMovingAverages, COMMON_MA_PERIODS } from '../utils/technical-indicators';
+import { parseAlpacaDate, isTradingDay, formatMarketDate } from '../lib/market-time';
 import type { StockData } from '../types/stock';
 import type { TickerNoteRow } from '../types/database';
 
@@ -85,19 +86,23 @@ export function TickerDetailChart({
     );
   }
 
-  // Sort bars by date and prepare data
+  // Sort bars by date and prepare data with proper timezone handling
   const sortedBars = [...stockData.bars].sort((a, b) => 
     new Date(a.t).getTime() - new Date(b.t).getTime()
   );
 
-  const data = sortedBars.map(bar => ({
-    date: new Date(bar.t),
-    price: bar.c,
-    volume: bar.v,
-    high: bar.h,
-    low: bar.l,
-    open: bar.o,
-  }));
+  // Parse dates properly and filter to trading days only
+  const data = sortedBars
+    .map(bar => ({
+      date: parseAlpacaDate(bar.t),
+      price: bar.c,
+      volume: bar.v,
+      high: bar.h,
+      low: bar.l,
+      open: bar.o,
+      originalTimestamp: bar.t,
+    }))
+    .filter(d => isTradingDay(d.date)); // Only include trading days
 
   // Calculate price statistics
   const latestPrice = data[data.length - 1]?.price;
@@ -484,7 +489,7 @@ export function TickerDetailChart({
             <AxisBottom
               top={innerHeight}
               scale={xScale}
-              tickFormat={(value) => timeFormat('%m/%d')(value as Date)}
+              tickFormat={(value) => formatMarketDate(value as Date, 'short')}
               stroke="#6b7280"
               tickStroke="#6b7280"
               numTicks={8}

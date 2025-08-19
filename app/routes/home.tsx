@@ -1,5 +1,5 @@
 import type { Route } from "./+types/home";
-import { useLoaderData, useActionData, redirect } from "react-router";
+import { useLoaderData, useActionData, redirect, Link } from "react-router";
 import { StockChart } from "../components/stock-chart";
 import { AddTicker } from "../components/add-ticker";
 import { TimeRangeSelector, getDateRangeFromParam } from "../components/time-range-selector";
@@ -11,6 +11,7 @@ import { stockCacheService } from "../services/stock-cache";
 import { watchlistService } from "../services/watchlist";
 import { getLogoService } from "../services/logo";
 import { createAccountService } from "../services/account";
+import { getMarketTime, getMostRecentTradingDay } from "../lib/market-time";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -81,6 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   
   const url = new URL(request.url);
   const rangeParam = url.searchParams.get("range");
+  const forceRefresh = url.searchParams.get("refresh") === "true";
   
   const loadStartTime = Date.now();
   
@@ -115,6 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         loadSource: null,
         loadTime: null,
         dateRange: null,
+        chartDateRange: null,
       };
     }
 
@@ -131,18 +134,35 @@ export async function loader({ request }: Route.LoaderArgs) {
         loadSource: null,
         loadTime: null,
         dateRange: null,
+        chartDateRange: null,
       };
     }
 
-    // Calculate date range based on URL parameter
-    const { startDate, endDate } = getDateRangeFromParam(rangeParam);
+    // Calculate date range based on URL parameter (for chart display)
+    const chartDateRange = getDateRangeFromParam(rangeParam);
+    
+    // For data fetching, we need a broader range to ensure:
+    // 1. Latest prices (extend to most recent trading day)
+    // 2. "Since added" calculations (extend back to earliest watchlist entry)
+    let dataStartDate = chartDateRange.startDate;
+    const dataEndDate = getMostRecentTradingDay(); // Use most recent trading day, not calendar day
+    
+    // Find the earliest added_date to ensure we can calculate "since added"
+    if (watchlistDetails.length > 0) {
+      const earliestAddedDate = new Date(Math.min(...watchlistDetails.map(w => new Date(w.added_date).getTime())));
+      // Use the earlier of chart start date or earliest added date
+      if (earliestAddedDate < dataStartDate) {
+        dataStartDate = earliestAddedDate;
+      }
+    }
     
     // Fetch data using cache service (checks cache first, then API)
     const result = await stockCacheService.fetchAndCacheStockData(
       symbols,
-      startDate,
-      endDate,
-      '1Day'
+      dataStartDate,
+      dataEndDate,
+      '1Day',
+      forceRefresh
     );
     
     // Get cache statistics after loading
@@ -189,7 +209,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       watchlistStats,
       loadSource,
       loadTime: `${loadTime}ms`,
-      dateRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+      dateRange: `${dataStartDate.toISOString().split('T')[0]} to ${dataEndDate.toISOString().split('T')[0]}`,
       logosFound: Object.keys(logos).filter(symbol => logos[symbol]).length,
     });
 
@@ -204,7 +224,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       watchlistStats,
       loadSource, 
       loadTime,
-      dateRange: { startDate, endDate }
+      dateRange: { startDate: dataStartDate, endDate: dataEndDate },
+      chartDateRange: chartDateRange
     };
   } catch (error) {
     console.error('❌ Loader error:', error);
@@ -220,6 +241,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       loadSource: null,
       loadTime: null,
       dateRange: null,
+      chartDateRange: null,
     };
   }
 }
@@ -311,6 +333,16 @@ export default function Home() {
           <div className="hidden sm:flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
             <div className="flex items-center space-x-3">
+              <Link 
+                to="/?refresh=true"
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                title="Refresh prices from market"
+              >
+                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </Link>
               <AddTicker />
               <TimeRangeSelector />
             </div>
@@ -322,6 +354,15 @@ export default function Home() {
               <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
             </div>
             <div className="flex flex-col items-end space-y-2">
+              <Link 
+                to="/?refresh=true"
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </Link>
               <AddTicker />
               <TimeRangeSelector />
             </div>
@@ -332,7 +373,7 @@ export default function Home() {
           {data.stocksData.map((stock) => {
             // Find watchlist entry for this symbol
             const watchlistEntry = data.watchlistDetails.find(w => w.symbol === stock.symbol);
-            const logoUrl = (data.logos && data.logos[stock.symbol]) || null;
+            const logoUrl = (data.logos && typeof data.logos === 'object' && stock.symbol in data.logos ? (data.logos as Record<string, string | null>)[stock.symbol] : null) || null;
             
             return (
               <StockChart
@@ -340,6 +381,7 @@ export default function Home() {
                 stockData={stock}
                 watchlistEntry={watchlistEntry}
                 logoUrl={logoUrl}
+                chartDateRange={data.chartDateRange}
               />
             );
           })}
