@@ -203,7 +203,13 @@ export function StockChart({
 
         {/* Chart */}
         <div className="w-full overflow-hidden">
-          <svg width={width} height={height} className="max-w-full">
+          <svg 
+            width={width} 
+            height={height} 
+            viewBox={`0 0 ${width} ${height}`}
+            className="w-full h-auto max-w-full"
+            preserveAspectRatio="xMidYMid meet"
+          >
             <Group left={margin.left} top={margin.top}>
               {/* Grid */}
               <GridRows

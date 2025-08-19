@@ -43,6 +43,8 @@ export function TickerDetailChart({
     maValues: Record<number, number>;
     visible: boolean;
   } | null>(null);
+  const [selectedNotes, setSelectedNotes] = useState<TickerNoteRow[] | null>(null);
+  const [selectedNotePosition, setSelectedNotePosition] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -50,8 +52,8 @@ export function TickerDetailChart({
         const rect = containerRef.current.getBoundingClientRect();
         const containerPadding = 48; // Account for container padding
         setDimensions({
-          width: Math.max(600, rect.width - containerPadding),
-          height: 400, // Fixed height for detail view
+          width: Math.max(300, rect.width - containerPadding), // Reduced minimum for mobile
+          height: window.innerWidth < 640 ? 300 : 400, // Shorter on mobile
         });
       }
     };
@@ -209,19 +211,37 @@ export function TickerDetailChart({
     setCrosshair(null);
   }, []);
 
-  // Process notes to find dates that have notes
-  const noteDates = new Set(
-    notes.map(note => {
-      const noteDate = new Date(note.created_at);
-      // Normalize to just the date (remove time)
-      return noteDate.toDateString();
-    })
-  );
+  // Map notes to nearest trading days
+  const notesByDate = new Map<string, TickerNoteRow[]>();
+  
+  notes.forEach(note => {
+    const noteDate = new Date(note.created_at);
+    
+    // Find the nearest trading day for this note
+    let nearestDataPoint = data[0];
+    let minDiff = Math.abs(noteDate.getTime() - data[0].date.getTime());
+    
+    for (const dataPoint of data) {
+      const diff = Math.abs(noteDate.getTime() - dataPoint.date.getTime());
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearestDataPoint = dataPoint;
+      }
+    }
+    
+    if (nearestDataPoint) {
+      const dateKey = nearestDataPoint.date.toDateString();
+      if (!notesByDate.has(dateKey)) {
+        notesByDate.set(dateKey, []);
+      }
+      notesByDate.get(dateKey)!.push(note);
+    }
+  });
 
   // Find chart data points that have notes
   const noteIndicators = data.filter(dataPoint => {
     const dataDate = dataPoint.date.toDateString();
-    return noteDates.has(dataDate);
+    return notesByDate.has(dataDate);
   });
 
 
@@ -320,13 +340,19 @@ export function TickerDetailChart({
       </div>
 
       {/* Chart */}
-      <div className="w-full bg-gray-50 rounded-lg p-4">
+      <div className="w-full bg-gray-50 rounded-lg p-4 overflow-hidden">
         <svg 
           width={width} 
           height={height} 
-          className="max-w-full"
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full h-auto max-w-full"
+          preserveAspectRatio="xMidYMid meet"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onClick={() => {
+            setSelectedNotes(null);
+            setSelectedNotePosition(null);
+          }}
         >
           <Group left={margin.left} top={margin.top}>
             {/* Grid */}
@@ -390,30 +416,65 @@ export function TickerDetailChart({
             {noteIndicators.map((dataPoint, index) => {
               const x = xScale(getDate(dataPoint)) ?? 0;
               const y = yScale(getPrice(dataPoint)) ?? 0;
+              const dateKey = dataPoint.date.toDateString();
+              const notesForDate = notesByDate.get(dateKey) || [];
+              const hasMultipleNotes = notesForDate.length > 1;
               
               return (
-                <g key={`note-${index}`}>
-                  {/* Outer ring */}
+                <g 
+                  key={`note-${index}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedNotes(notesForDate);
+                    setSelectedNotePosition({ x: x + margin.left, y: y + margin.top });
+                  }}
+                  className="cursor-pointer"
+                >
+                  {/* Outer ring - pulse animation on hover */}
                   <circle
                     cx={x}
                     cy={y}
-                    r={6}
+                    r={8}
                     fill="none"
                     stroke="#f59e0b"
                     strokeWidth={1}
-                    opacity={0.4}
+                    opacity={0.3}
+                    className="transition-all hover:r-10 hover:opacity-50"
                   />
                   {/* Note dot */}
                   <circle
                     cx={x}
                     cy={y}
-                    r={4}
+                    r={5}
                     fill="#f59e0b"
                     stroke="#ffffff"
                     strokeWidth={2}
-                    className="cursor-pointer"
-                    style={{ filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))' }}
+                    className="transition-all hover:r-6"
+                    style={{ filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))' }}
                   />
+                  {/* Badge for multiple notes */}
+                  {hasMultipleNotes && (
+                    <>
+                      <circle
+                        cx={x + 6}
+                        cy={y - 6}
+                        r={8}
+                        fill="#dc2626"
+                        stroke="#ffffff"
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={x + 6}
+                        y={y - 2}
+                        fill="white"
+                        fontSize="10"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        {notesForDate.length}
+                      </text>
+                    </>
+                  )}
                 </g>
               );
             })}
@@ -491,8 +552,10 @@ export function TickerDetailChart({
           <div 
             className="absolute bg-gray-800 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none z-10"
             style={{
-              left: Math.min(crosshair.x + margin.left + 10, width - 200),
-              top: Math.max(crosshair.y + margin.top - 10, 10),
+              left: crosshair.x + margin.left + (window.innerWidth < 640 ? 150 : 200) > width 
+                ? crosshair.x + margin.left - (window.innerWidth < 640 ? 140 : 180)
+                : crosshair.x + margin.left + 10,
+              top: crosshair.y + margin.top + (window.innerWidth < 640 ? 120 : 200),
             }}
           >
             <div className="space-y-1">
@@ -524,6 +587,75 @@ export function TickerDetailChart({
             </div>
           </div>
         )}
+        
+        {/* Note Details Popup */}
+        {selectedNotes && selectedNotePosition && (() => {
+          const isOnRight = selectedNotePosition.x + 420 < width;
+          return (
+            <div 
+              className="absolute bg-white border-2 border-amber-500 rounded-lg shadow-xl p-4 z-20 max-w-md"
+              style={{
+                // Position to the right if there's space, otherwise to the left
+                left: isOnRight 
+                  ? selectedNotePosition.x + 20  // Position to the right
+                  : selectedNotePosition.x - 420, // Position to the left
+                // Center vertically around the clicked point, but keep within bounds
+                top: Math.min(
+                  Math.max(selectedNotePosition.y - 100, 10), // Don't go above top edge
+                  height - 200 // Don't go below bottom edge
+                ),
+              }}
+            >
+            <div className="flex items-start justify-between mb-2">
+              <h4 className="font-semibold text-gray-900 flex items-center">
+                <svg className="w-4 h-4 mr-2 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                  <path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000 2H6a2 2 0 100 4h2a2 2 0 100-4h-.5a1 1 0 000-2H8a2 2 0 012-2h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" clipRule="evenodd"/>
+                </svg>
+                Research Notes {selectedNotes.length > 1 && `(${selectedNotes.length})`}
+              </h4>
+              <button
+                onClick={() => {
+                  setSelectedNotes(null);
+                  setSelectedNotePosition(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {selectedNotes.map((note, index) => (
+                <div key={note.id} className={`${index > 0 ? 'pt-3 border-t border-gray-200' : ''}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      note.note_type === 'bullish' ? 'bg-green-100 text-green-700' :
+                      note.note_type === 'bearish' ? 'bg-red-100 text-red-700' :
+                      note.note_type === 'neutral' ? 'bg-gray-100 text-gray-700' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>
+                      {note.note_type}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(note.created_at).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.note_text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          );
+        })()}
       </div>
       
       {/* Time Range Selector - positioned below chart on the right */}

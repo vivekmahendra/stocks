@@ -3,6 +3,7 @@ import { useLoaderData, redirect, Link } from "react-router";
 import { TickerDetailChart } from "../components/ticker-detail-chart";
 import { TickerNotes } from "../components/ticker-notes";
 import { TimeRangeSelector, getDateRangeFromParam } from "../components/time-range-selector";
+import { Layout } from "../components/layout";
 import { CompanyLogo } from "../components/company-logo";
 import { stockCacheService } from "../services/stock-cache";
 import { watchlistService } from "../services/watchlist";
@@ -202,27 +203,22 @@ export default function TickerDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header with Breadcrumb and Controls */}
+    <Layout>
+      <div className="container mx-auto px-4 py-6">
+        {/* Header with Symbol and Metadata */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6">
           <div className="flex items-center space-x-4 mb-4 lg:mb-0">
-            <Link 
-              to="/" 
-              className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Dashboard
-            </Link>
-            <span className="text-gray-300">/</span>
             <div className="flex items-center space-x-3">
-              <CompanyLogo symbol={symbol} logoUrl={logoUrl} size="md" />
-              <h1 className="text-2xl font-bold text-gray-900">{symbol}</h1>
+              <CompanyLogo symbol={symbol} logoUrl={logoUrl} size="lg" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">{symbol}</h1>
+                {watchlistEntry?.name && (
+                  <p className="text-sm text-gray-600">{watchlistEntry.name}</p>
+                )}
+              </div>
             </div>
             {watchlistEntry && (
-              <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+              <span className="px-3 py-1 text-xs bg-green-100 text-green-800 rounded-full font-medium">
                 In Watchlist
               </span>
             )}
@@ -269,6 +265,6 @@ export default function TickerDetail() {
           </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }

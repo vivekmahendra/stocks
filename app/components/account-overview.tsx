@@ -6,6 +6,7 @@ interface AccountOverviewProps {
   totalPLPercent: number;
   dayPL: number;
   dayPLPercent: number;
+  isPaper: boolean;
 }
 
 function formatCurrency(value: string | number): string {
@@ -22,7 +23,7 @@ function formatPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
-export function AccountOverview({ account, totalPL, totalPLPercent, dayPL, dayPLPercent }: AccountOverviewProps) {
+export function AccountOverview({ account, totalPL, totalPLPercent, dayPL, dayPLPercent, isPaper }: AccountOverviewProps) {
   const portfolioValue = parseFloat(account.portfolio_value);
   const buyingPower = parseFloat(account.buying_power);
   const cash = parseFloat(account.cash);
@@ -39,8 +40,15 @@ export function AccountOverview({ account, totalPL, totalPLPercent, dayPL, dayPL
           }`}>
             {account.status}
           </span>
+          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+            isPaper 
+              ? 'bg-orange-100 text-orange-800' 
+              : 'bg-blue-100 text-blue-800'
+          }`}>
+            {isPaper ? 'PAPER' : 'LIVE'}
+          </span>
           {account.pattern_day_trader && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
               PDT
             </span>
           )}

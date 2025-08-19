@@ -3,6 +3,7 @@ import { useLoaderData, useActionData, redirect } from "react-router";
 import { StockChart } from "../components/stock-chart";
 import { AddTicker } from "../components/add-ticker";
 import { TimeRangeSelector, getDateRangeFromParam } from "../components/time-range-selector";
+import { Layout } from "../components/layout";
 import { AccountOverview } from "../components/account-overview";
 import { OpenOrders } from "../components/open-orders";
 import { Positions } from "../components/positions";
@@ -238,34 +239,24 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <Layout>
       <div className="container mx-auto px-4 py-6">
-        <div className="flex flex-col space-y-3 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-3xl font-bold text-gray-900 text-center sm:text-left">
-              Stock Dashboard
-            </h1>
-            <div className="mt-3 sm:mt-0">
-              <AddTicker />
-            </div>
-          </div>
-          {actionData?.error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm font-medium">
-                    {actionData.error}
-                  </p>
-                </div>
+        {actionData?.error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium">
+                  {actionData.error}
+                </p>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Account Dashboard */}
         {accountSummary && (
@@ -277,6 +268,7 @@ export default function Home() {
               totalPLPercent={accountSummary.totalPLPercent}
               dayPL={accountSummary.dayPL}
               dayPLPercent={accountSummary.dayPLPercent}
+              isPaper={accountSummary.isPaper}
             />
             
             {/* Positions and Orders */}
@@ -290,7 +282,10 @@ export default function Home() {
         {/* Watchlist Section */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
-          <TimeRangeSelector />
+          <div className="flex items-center space-x-3">
+            <AddTicker />
+            <TimeRangeSelector />
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -349,6 +344,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
 }

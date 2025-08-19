@@ -7,10 +7,12 @@ export class AlpacaAccountService {
   private apiKey: string;
   private secretKey: string;
   private baseUrl: string;
+  public readonly isPaper: boolean;
 
   constructor(apiKey: string, secretKey: string, isPaper = true) {
     this.apiKey = apiKey;
     this.secretKey = secretKey;
+    this.isPaper = isPaper;
     this.baseUrl = isPaper ? ALPACA_PAPER_URL : ALPACA_LIVE_URL;
   }
 
@@ -62,6 +64,7 @@ export class AlpacaAccountService {
     totalPLPercent: number;
     dayPL: number;
     dayPLPercent: number;
+    isPaper: boolean;
   }> {
     try {
       console.log('🔄 Fetching account summary...');
@@ -101,6 +104,7 @@ export class AlpacaAccountService {
         totalPLPercent,
         dayPL,
         dayPLPercent,
+        isPaper: this.isPaper,
       };
     } catch (error) {
       console.error('❌ Error fetching account summary:', error);
