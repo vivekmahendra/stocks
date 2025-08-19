@@ -1,5 +1,5 @@
 import type { Route } from "./+types/home";
-import { useLoaderData, useActionData, redirect } from "react-router";
+import { useLoaderData, useActionData, redirect, useNavigation } from "react-router";
 import { StockChart } from "../components/stock-chart";
 import { AddTicker } from "../components/add-ticker";
 import { TimeRangeSelector, getDateRangeFromParam } from "../components/time-range-selector";
@@ -11,6 +11,7 @@ import { stockCacheService } from "../services/stock-cache";
 import { watchlistService } from "../services/watchlist";
 import { getLogoService } from "../services/logo";
 import { createAccountService } from "../services/account";
+import { createGrokService, MARKET_SUMMARY_PROMPT } from "../services/grok";
 import type { StockData } from "../types/stock";
 
 export function meta({}: Route.MetaArgs) {
@@ -96,10 +97,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     const secretKey = process.env.ALPACA_SECRET_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    const xaiApiKey = process.env.XAI_API_KEY;
     
     console.log('🔑 Environment check:', {
       hasAlpacaKeys: !!(apiKey && secretKey),
       hasSupabaseKeys: !!(supabaseUrl && supabaseKey),
+      hasXAIKey: !!xaiApiKey,
+      xaiKeyLength: xaiApiKey ? xaiApiKey.length : 0
     });
 
     if (!apiKey || !secretKey) {
@@ -109,6 +113,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         watchlistDetails: [],
         logos: {} as Record<string, string | null>,
         accountSummary: null,
+        marketSummary: null,
         error: 'Missing Alpaca API credentials. Please check your .env file.',
         cacheStats: null,
         watchlistStats: null,
@@ -125,6 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         watchlistDetails: [],
         logos: {} as Record<string, string | null>,
         accountSummary: null,
+        marketSummary: null,
         error: 'Missing Supabase credentials. Please check your .env file.',
         cacheStats: null,
         watchlistStats: null,
@@ -166,6 +172,23 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Continue without account data - this is not critical for basic functionality
     }
     
+    // Fetch market summary from Grok
+    let marketSummary = null;
+    try {
+      console.log('🔄 Attempting to create Grok service...');
+      const grokService = createGrokService();
+      if (grokService) {
+        console.log('🔄 Grok service created, fetching market summary...');
+        marketSummary = await grokService.getMarketSummary();
+        console.log('✅ Market summary loaded successfully:', marketSummary?.substring(0, 50) + '...');
+      } else {
+        console.log('⚠️ Grok service not created - check XAI_API_KEY');
+      }
+    } catch (error) {
+      console.error('⚠️ Could not load market summary:', error);
+      // Continue without market summary - this is not critical
+    }
+    
     // Determine load source from the service response
     const loadSource = result.loadedFromCache ? 'cache' : 'api';
     
@@ -187,6 +210,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       watchlistDetails,
       logos,
       accountSummary,
+      marketSummary,
       error: null, 
       cacheStats, 
       watchlistStats,
@@ -201,6 +225,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       watchlistDetails: [],
       logos: {},
       accountSummary: null,
+      marketSummary: null,
       error: error instanceof Error ? error.message : 'Failed to fetch stock data',
       cacheStats: null,
       watchlistStats: null,
@@ -212,8 +237,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Home() {
-  const { stocksData, watchlistDetails, logos, accountSummary, error, cacheStats, watchlistStats, loadSource, loadTime, dateRange } = useLoaderData<typeof loader>();
+  const { stocksData, watchlistDetails, logos, accountSummary, marketSummary, error, cacheStats, watchlistStats, loadSource, loadTime, dateRange } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
 
   if (error) {
     return (
@@ -257,6 +283,57 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Market Summary from Grok */}
+        <div className="mb-6">
+          {navigation.state === "loading" && !marketSummary ? (
+            // Loading skeleton
+            <div className="rounded-lg p-4 border bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 animate-pulse">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="h-5 w-5 bg-blue-300 rounded"></div>
+                </div>
+                <div className="flex-1">
+                  <div className="h-4 bg-blue-200 rounded w-24 mb-2"></div>
+                  <div className="space-y-2">
+                    <div className="h-3 bg-gray-300 rounded w-full"></div>
+                    <div className="h-3 bg-gray-300 rounded w-5/6"></div>
+                    <div className="h-3 bg-gray-300 rounded w-4/6"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : marketSummary ? (
+            // Actual content
+            <div className={`rounded-lg p-4 border ${
+              marketSummary.startsWith('⚠️') 
+                ? 'bg-yellow-50 border-yellow-200' 
+                : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+            }`}>
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  {marketSummary.startsWith('⚠️') ? (
+                    <svg className="h-5 w-5 text-yellow-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className={`text-sm font-semibold mb-1 ${
+                    marketSummary.startsWith('⚠️') ? 'text-yellow-900' : 'text-blue-900'
+                  }`}>Market Summary</h3>
+                  <p className={`text-sm leading-relaxed ${
+                    marketSummary.startsWith('⚠️') ? 'text-yellow-700' : 'text-gray-700'
+                  }`}>{marketSummary}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {/* Account Dashboard */}
         {accountSummary && (
