@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Group } from '@visx/group';
-import { LinePath } from '@visx/shape';
+import { LinePath, Line } from '@visx/shape';
 import { scaleTime, scaleLinear } from '@visx/scale';
 import { AxisBottom, AxisLeft } from '@visx/axis';
 import { GridRows, GridColumns } from '@visx/grid';
 import { curveMonotoneX } from '@visx/curve';
 import { timeFormat } from 'd3-time-format';
-import { extent } from 'd3-array';
+import { extent, bisector } from 'd3-array';
 import { CompanyLogo } from './company-logo';
+import { calculateMovingAverages, COMMON_MA_PERIODS } from '../utils/technical-indicators';
 import type { StockData } from '../types/stock';
 import type { TickerNoteRow } from '../types/database';
 
@@ -28,6 +29,19 @@ export function TickerDetailChart({
 }: TickerDetailChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
+  const [showMovingAverages, setShowMovingAverages] = useState({ 
+    20: false, 
+    50: true, 
+    200: true 
+  });
+  const [crosshair, setCrosshair] = useState<{
+    x: number;
+    y: number;
+    date: Date;
+    price: number;
+    maValues: Record<number, number>;
+    visible: boolean;
+  } | null>(null);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -92,6 +106,13 @@ export function TickerDetailChart({
   const lowPrice = Math.min(...data.map(d => d.low));
   const avgVolume = data.reduce((sum, d) => sum + d.volume, 0) / data.length;
 
+  // Calculate moving averages
+  const enabledMAPeriods = Object.entries(showMovingAverages)
+    .filter(([_, enabled]) => enabled)
+    .map(([period, _]) => parseInt(period));
+  
+  const movingAverages = calculateMovingAverages(data, enabledMAPeriods, 'SMA');
+
   // Chart dimensions
   const { width, height } = dimensions;
   const innerWidth = width - margin.left - margin.right;
@@ -99,7 +120,13 @@ export function TickerDetailChart({
 
   // Scales
   const dateExtent = extent(data, d => d.date) as [Date, Date];
-  const priceExtent = extent(data, d => d.price) as [number, number];
+  
+  // Include moving average values in price extent
+  let allPrices = data.map(d => d.price);
+  Object.values(movingAverages).forEach(maData => {
+    allPrices = [...allPrices, ...maData.map(point => point.value)];
+  });
+  const priceExtent = extent(allPrices) as [number, number];
   
   // Extend date domain by 2% on each side to ensure data points aren't cut off
   const dateRange = dateExtent[1].getTime() - dateExtent[0].getTime();
@@ -123,6 +150,63 @@ export function TickerDetailChart({
   // Accessors
   const getDate = (d: typeof data[0]) => d.date;
   const getPrice = (d: typeof data[0]) => d.price;
+
+  // Bisector for finding closest data point
+  const bisectDate = bisector<typeof data[0], Date>((d) => d.date).left;
+
+  // Mouse event handlers
+  const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
+    const svg = event.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = event.clientX - rect.left - margin.left;
+    const y = event.clientY - rect.top - margin.top;
+
+    if (x < 0 || x > innerWidth || y < 0 || y > innerHeight) {
+      setCrosshair(null);
+      return;
+    }
+
+    // Convert x position to date
+    const mouseDate = xScale.invert(x);
+    
+    // Find closest data point
+    const index = bisectDate(data, mouseDate);
+    const d0 = data[index - 1];
+    const d1 = data[index];
+    
+    if (!d0 && !d1) {
+      setCrosshair(null);
+      return;
+    }
+    
+    // Choose closer data point
+    const d = !d0 ? d1 : !d1 ? d0 : 
+      mouseDate.getTime() - d0.date.getTime() > d1.date.getTime() - mouseDate.getTime() ? d1 : d0;
+
+    // Get moving average values for this date
+    const maValues: Record<number, number> = {};
+    Object.entries(movingAverages).forEach(([period, maData]) => {
+      const maPoint = maData.find(point => 
+        Math.abs(point.date.getTime() - d.date.getTime()) < 24 * 60 * 60 * 1000 // within 1 day
+      );
+      if (maPoint) {
+        maValues[parseInt(period)] = maPoint.value;
+      }
+    });
+
+    setCrosshair({
+      x: xScale(d.date) ?? 0,
+      y: yScale(d.price) ?? 0,
+      date: d.date,
+      price: d.price,
+      maValues,
+      visible: true,
+    });
+  }, [data, xScale, yScale, innerWidth, innerHeight, movingAverages, bisectDate]);
+
+  const handleMouseLeave = useCallback(() => {
+    setCrosshair(null);
+  }, []);
 
   // Process notes to find dates that have notes
   const noteDates = new Set(
@@ -188,20 +272,61 @@ export function TickerDetailChart({
           <p className="text-sm text-gray-500">
             {data.length} trading days • Last data: {data.length > 0 ? data[data.length - 1].date.toLocaleDateString() : 'N/A'}
           </p>
-          {notes.length > 0 && (
-            <div className="flex items-center space-x-2 text-xs text-gray-500">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                <span>Research notes ({notes.length})</span>
-              </div>
+          <div className="flex items-center space-x-4">
+            {/* Moving Average Controls */}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-medium text-gray-500">Moving Averages:</span>
+              {[20, 50, 200].map((period) => {
+                const colors = {
+                  20: 'bg-amber-500',
+                  50: 'bg-red-500', 
+                  200: 'bg-purple-500'
+                };
+                
+                return (
+                  <label key={period} className="flex items-center space-x-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showMovingAverages[period as keyof typeof showMovingAverages]}
+                      onChange={(e) => {
+                        setShowMovingAverages(prev => ({
+                          ...prev,
+                          [period]: e.target.checked
+                        }));
+                      }}
+                      className="sr-only"
+                    />
+                    <div className={`w-3 h-3 rounded-full border-2 transition-all ${
+                      showMovingAverages[period as keyof typeof showMovingAverages]
+                        ? `${colors[period as keyof typeof colors]} border-transparent`
+                        : 'border-gray-300 bg-white'
+                    }`} />
+                    <span className="text-xs text-gray-600">MA{period}</span>
+                  </label>
+                );
+              })}
             </div>
-          )}
+            {notes.length > 0 && (
+              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                  <span>Research notes ({notes.length})</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Chart */}
-      <div className="w-full bg-gray-50 rounded-lg p-4">
-        <svg width={width} height={height} className="max-w-full">
+      <div className="w-full bg-gray-50 rounded-lg p-4 relative">
+        <svg 
+          width={width} 
+          height={height} 
+          className="max-w-full"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
           <Group left={margin.left} top={margin.top}>
             {/* Grid */}
             <GridRows
@@ -219,7 +344,7 @@ export function TickerDetailChart({
               strokeOpacity={0.8}
             />
 
-            {/* Line */}
+            {/* Price Line */}
             <LinePath
               data={data}
               x={d => xScale(getDate(d)) ?? 0}
@@ -228,6 +353,37 @@ export function TickerDetailChart({
               strokeWidth={2.5}
               curve={curveMonotoneX}
             />
+
+            {/* Moving Average Lines */}
+            {Object.entries(movingAverages).map(([period, maData]) => {
+              const periodNum = parseInt(period);
+              let maColor = '#6b7280'; // default gray
+              let strokeWidth = 1.5;
+              
+              // Color coding for different periods
+              if (periodNum === 20) {
+                maColor = '#f59e0b'; // amber
+              } else if (periodNum === 50) {
+                maColor = '#ef4444'; // red
+                strokeWidth = 2;
+              } else if (periodNum === 200) {
+                maColor = '#8b5cf6'; // purple
+                strokeWidth = 2.5;
+              }
+              
+              return (
+                <LinePath
+                  key={`ma-${period}`}
+                  data={maData}
+                  x={d => xScale(d.date) ?? 0}
+                  y={d => yScale(d.value) ?? 0}
+                  stroke={maColor}
+                  strokeWidth={strokeWidth}
+                  strokeOpacity={0.8}
+                  curve={curveMonotoneX}
+                />
+              );
+            })}
 
             {/* Note Indicators */}
             {noteIndicators.map((dataPoint, index) => {
@@ -291,8 +447,82 @@ export function TickerDetailChart({
                 dx: -5,
               })}
             />
+
+            {/* Crosshair */}
+            {crosshair && (
+              <g>
+                {/* Vertical line */}
+                <Line
+                  from={{ x: crosshair.x, y: 0 }}
+                  to={{ x: crosshair.x, y: innerHeight }}
+                  stroke="#374151"
+                  strokeWidth={1}
+                  strokeOpacity={0.5}
+                  strokeDasharray="4,4"
+                />
+                
+                {/* Horizontal line */}
+                <Line
+                  from={{ x: 0, y: crosshair.y }}
+                  to={{ x: innerWidth, y: crosshair.y }}
+                  stroke="#374151"
+                  strokeWidth={1}
+                  strokeOpacity={0.5}
+                  strokeDasharray="4,4"
+                />
+                
+                {/* Data point circle */}
+                <circle
+                  cx={crosshair.x}
+                  cy={crosshair.y}
+                  r={4}
+                  fill={color}
+                  stroke="white"
+                  strokeWidth={2}
+                />
+              </g>
+            )}
           </Group>
         </svg>
+
+        {/* Tooltip */}
+        {crosshair && (
+          <div 
+            className="absolute bg-gray-800 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none z-10"
+            style={{
+              left: Math.min(crosshair.x + margin.left + 10, width - 200),
+              top: Math.max(crosshair.y + margin.top - 10, 10),
+            }}
+          >
+            <div className="space-y-1">
+              <div className="font-medium">
+                {crosshair.date.toLocaleDateString('en-US', { 
+                  weekday: 'short',
+                  month: 'short', 
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </div>
+              <div className="text-green-400 font-medium">
+                Price: ${crosshair.price.toFixed(2)}
+              </div>
+              {Object.entries(crosshair.maValues).map(([period, value]) => {
+                const colors = {
+                  20: 'text-amber-400',
+                  50: 'text-red-400',
+                  200: 'text-purple-400',
+                };
+                const colorClass = colors[period as keyof typeof colors] || 'text-gray-400';
+                
+                return (
+                  <div key={period} className={colorClass}>
+                    MA{period}: ${value.toFixed(2)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
