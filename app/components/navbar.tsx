@@ -28,7 +28,7 @@ export function Navbar() {
               <h1 className="text-lg font-light text-gray-900 tracking-wide">stocks.vivekmahendra</h1>
             </Link>
             
-            <div className="flex items-center space-x-6">
+            <div className="hidden sm:flex items-center space-x-6">
               <div className="flex items-center space-x-2 min-w-[120px]">
                 {marketStatus ? (
                   <>

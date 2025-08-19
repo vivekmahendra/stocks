@@ -280,11 +280,25 @@ export default function Home() {
         )}
 
         {/* Watchlist Section */}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
-          <div className="flex items-center space-x-3">
-            <AddTicker />
-            <TimeRangeSelector />
+        <div className="mb-4">
+          {/* Desktop layout - title and controls on same row */}
+          <div className="hidden sm:flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
+            <div className="flex items-center space-x-3">
+              <AddTicker />
+              <TimeRangeSelector />
+            </div>
+          </div>
+          
+          {/* Mobile layout - stacked vertically */}
+          <div className="sm:hidden">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">Watchlist</h2>
+            </div>
+            <div className="flex flex-col items-end space-y-2">
+              <AddTicker />
+              <TimeRangeSelector />
+            </div>
           </div>
         </div>
         
