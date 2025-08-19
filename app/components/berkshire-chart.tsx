@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Group } from '@visx/group';
-import { LinePath, Line } from '@visx/shape';
+import { LinePath, Line, Bar } from '@visx/shape';
 import { scaleTime, scaleLinear } from '@visx/scale';
-import { AxisBottom, AxisLeft } from '@visx/axis';
+import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis';
 import { GridRows, GridColumns } from '@visx/grid';
 import { curveMonotoneX } from '@visx/curve';
 import { extent, bisector } from 'd3-array';
@@ -14,7 +14,7 @@ interface BerkshireChartProps {
   stockData: StockData;
 }
 
-const margin = { top: 20, right: 50, bottom: 40, left: 60 };
+const margin = { top: 20, right: 80, bottom: 40, left: 60 };
 
 export function BerkshireChart({ stockData }: BerkshireChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,6 +24,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
     y: number;
     date: Date;
     price: number;
+    volume: number;
     visible: boolean;
   } | null>(null);
 
@@ -99,6 +100,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
 
   const dateExtent = extent(data, d => d.date) as [Date, Date];
   const priceExtent = extent(data, d => d.price) as [number, number];
+  const volumeExtent = extent(data, d => d.volume) as [number, number];
   
   const dateRange = dateExtent[1].getTime() - dateExtent[0].getTime();
   const padding = dateRange * 0.02;
@@ -123,6 +125,13 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
   const yScale = scaleLinear({
     range: [innerHeight, 0],
     domain: extendedPriceDomain,
+    nice: true,
+  });
+
+  // Volume scale overlaid on the chart - scales from bottom to about 30% of chart height
+  const volumeScale = scaleLinear({
+    range: [innerHeight, innerHeight * 0.7], // Volume bars take up bottom 30% of chart
+    domain: [0, volumeExtent[1]],
     nice: true,
   });
 
@@ -169,6 +178,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
       y: yScale(d.price) ?? 0,
       date: d.date,
       price: d.price,
+      volume: d.volume,
       visible: true,
     });
   }, [data, xScale, yScale, innerWidth, innerHeight, bisectDate, width, height]);
@@ -282,6 +292,22 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
               </g>
             )}
 
+            {/* Volume Bars - Overlaid */}
+            {data.map((d, i) => {
+              const barWidth = innerWidth / data.length * 0.6; // 60% of available width for cleaner overlay
+              return (
+                <Bar
+                  key={`volume-bar-${i}`}
+                  x={xScale(d.date) - barWidth / 2}
+                  y={volumeScale(d.volume)}
+                  width={barWidth}
+                  height={innerHeight - volumeScale(d.volume)}
+                  fill="#6b7280"
+                  fillOpacity={0.15}
+                />
+              );
+            })}
+
             <AxisBottom
               top={innerHeight}
               scale={xScale}
@@ -307,6 +333,28 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
                 fontSize: 11,
                 textAnchor: 'end',
                 dx: -5,
+              })}
+            />
+
+            {/* Volume Axis - Positioned for overlay */}
+            <AxisRight
+              left={innerWidth}
+              scale={volumeScale}
+              tickFormat={(value) => {
+                const num = Number(value);
+                if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+                if (num >= 1000) return `${(num / 1000).toFixed(0)}K`;
+                return num.toString();
+              }}
+              stroke="#9ca3af"
+              strokeOpacity={0.7}
+              tickStroke="#9ca3af"
+              numTicks={3}
+              tickLabelProps={() => ({
+                fill: '#9ca3af',
+                fontSize: 9,
+                textAnchor: 'start',
+                dx: 5,
               })}
             />
 
@@ -364,6 +412,13 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
               </div>
               <div className="text-green-400 font-medium">
                 Price: ${crosshair.price.toFixed(2)}
+              </div>
+              <div className="text-blue-400 font-medium">
+                Volume: {crosshair.volume >= 1000000 
+                  ? `${(crosshair.volume / 1000000).toFixed(1)}M` 
+                  : crosshair.volume >= 1000 
+                    ? `${(crosshair.volume / 1000).toFixed(0)}K`
+                    : crosshair.volume.toLocaleString()}
               </div>
             </div>
           </div>
