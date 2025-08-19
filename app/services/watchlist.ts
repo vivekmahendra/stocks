@@ -46,35 +46,67 @@ export class WatchlistService {
    * Add a new symbol to the watchlist
    */
   async addSymbol(symbol: string, name?: string): Promise<WatchlistRow | null> {
-    // Get current max sort_order
-    const { data: maxSortData } = await supabaseAdmin
+    const upperSymbol = symbol.toUpperCase();
+    
+    // First, check if the symbol already exists (including inactive ones)
+    const { data: existingData } = await supabaseAdmin
       .from('watchlist')
-      .select('sort_order')
-      .order('sort_order', { ascending: false })
-      .limit(1);
-
-    const nextSortOrder = (maxSortData?.[0]?.sort_order || 0) + 1;
-
-    const insertData: WatchlistInsert = {
-      symbol: symbol.toUpperCase(),
-      name,
-      sort_order: nextSortOrder,
-      is_active: true,
-    };
-
-    const { data, error } = await supabaseAdmin
-      .from('watchlist')
-      .insert(insertData)
-      .select()
+      .select('*')
+      .eq('symbol', upperSymbol)
       .single();
 
-    if (error) {
-      console.error(`❌ Error adding ${symbol} to watchlist:`, error);
-      return null;
-    }
+    if (existingData) {
+      // Symbol exists, reactivate it
+      const { data, error } = await supabaseAdmin
+        .from('watchlist')
+        .update({ 
+          is_active: true,
+          name: name || existingData.name, // Update name if provided, keep existing otherwise
+          updated_at: new Date().toISOString()
+        })
+        .eq('symbol', upperSymbol)
+        .select()
+        .single();
 
-    console.log(`✅ Added ${symbol} to watchlist`);
-    return data;
+      if (error) {
+        console.error(`❌ Error reactivating ${upperSymbol} in watchlist:`, error);
+        return null;
+      }
+
+      console.log(`✅ Reactivated ${upperSymbol} in watchlist`);
+      return data;
+    } else {
+      // Symbol doesn't exist, create new entry
+      // Get current max sort_order
+      const { data: maxSortData } = await supabaseAdmin
+        .from('watchlist')
+        .select('sort_order')
+        .order('sort_order', { ascending: false })
+        .limit(1);
+
+      const nextSortOrder = (maxSortData?.[0]?.sort_order || 0) + 1;
+
+      const insertData: WatchlistInsert = {
+        symbol: upperSymbol,
+        name,
+        sort_order: nextSortOrder,
+        is_active: true,
+      };
+
+      const { data, error } = await supabaseAdmin
+        .from('watchlist')
+        .insert(insertData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error(`❌ Error adding ${upperSymbol} to watchlist:`, error);
+        return null;
+      }
+
+      console.log(`✅ Added ${upperSymbol} to watchlist`);
+      return data;
+    }
   }
 
   /**

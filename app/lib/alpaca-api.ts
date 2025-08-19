@@ -11,10 +11,14 @@ export class AlpacaAPI {
     this.secretKey = secretKey;
   }
 
-  async getStockBars(symbols: string[], timeframe = '1Day', limit = 90): Promise<StockData[]> {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 3); // Past quarter
+  async getStockBars(symbols: string[], timeframe = '1Day', startDate?: Date, endDate?: Date, limit = 1000): Promise<StockData[]> {
+    // Use provided dates or default to 3 months
+    const actualEndDate = endDate || new Date();
+    const actualStartDate = startDate || (() => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - 3);
+      return date;
+    })();
 
     // Try getting all symbols in one request first with pagination
     let allData: Record<string, any[]> = {};
@@ -27,8 +31,8 @@ export class AlpacaAPI {
       const params = new URLSearchParams({
         symbols: symbols.join(','),
         timeframe,
-        start: startDate.toISOString().split('T')[0],
-        end: endDate.toISOString().split('T')[0],
+        start: actualStartDate.toISOString().split('T')[0],
+        end: actualEndDate.toISOString().split('T')[0],
         feed: 'iex',
         limit: limit.toString(),
       });
@@ -42,8 +46,8 @@ export class AlpacaAPI {
         url,
         symbols,
         timeframe,
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
+        startDate: actualStartDate.toISOString().split('T')[0],
+        endDate: actualEndDate.toISOString().split('T')[0],
         pageToken,
       });
 
@@ -103,7 +107,7 @@ export class AlpacaAPI {
       
       for (const symbol of missingSymbols) {
         try {
-          const individualResult = await this.getSingleStockBars(symbol, timeframe, limit);
+          const individualResult = await this.getSingleStockBars(symbol, timeframe, actualStartDate, actualEndDate, limit);
           if (individualResult.bars.length > 0) {
             allData[symbol] = individualResult.bars;
           }
@@ -119,10 +123,14 @@ export class AlpacaAPI {
     }));
   }
 
-  private async getSingleStockBars(symbol: string, timeframe = '1Day', limit = 90) {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 3);
+  private async getSingleStockBars(symbol: string, timeframe = '1Day', startDate?: Date, endDate?: Date, limit = 1000) {
+    // Use provided dates or default to 3 months
+    const actualEndDate = endDate || new Date();
+    const actualStartDate = startDate || (() => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - 3);
+      return date;
+    })();
 
     let allBars: any[] = [];
     let hasMoreData = true;
@@ -134,8 +142,8 @@ export class AlpacaAPI {
       const params = new URLSearchParams({
         symbols: symbol,
         timeframe,
-        start: startDate.toISOString().split('T')[0],
-        end: endDate.toISOString().split('T')[0],
+        start: actualStartDate.toISOString().split('T')[0],
+        end: actualEndDate.toISOString().split('T')[0],
         feed: 'iex',
         limit: limit.toString(),
       });

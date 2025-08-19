@@ -74,6 +74,32 @@ export interface Database {
           updated_at?: string;
         };
       };
+      ticker_notes: {
+        Row: {
+          id: number;
+          symbol: string;
+          note_text: string;
+          note_type: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          symbol: string;
+          note_text: string;
+          note_type?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          symbol?: string;
+          note_text?: string;
+          note_type?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       active_watchlist: {
@@ -101,3 +127,7 @@ export type WatchlistRow = Database['public']['Tables']['watchlist']['Row'];
 export type WatchlistInsert = Database['public']['Tables']['watchlist']['Insert'];
 export type WatchlistUpdate = Database['public']['Tables']['watchlist']['Update'];
 export type ActiveWatchlistRow = Database['public']['Views']['active_watchlist']['Row'];
+
+export type TickerNoteRow = Database['public']['Tables']['ticker_notes']['Row'];
+export type TickerNoteInsert = Database['public']['Tables']['ticker_notes']['Insert'];
+export type TickerNoteUpdate = Database['public']['Tables']['ticker_notes']['Update'];

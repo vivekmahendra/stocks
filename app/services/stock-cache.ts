@@ -40,7 +40,12 @@ export class StockCacheService {
         );
         
         if (!hasCompleteData) {
-          console.log(`⚠️ Incomplete data for ${symbol}, will fetch missing data`);
+          const firstBar = new Date(cachedData[0].t);
+          const lastBar = new Date(cachedData[cachedData.length - 1].t);
+          console.log(`⚠️ Incomplete data for ${symbol}:`);
+          console.log(`   Requested: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+          console.log(`   Cached: ${firstBar.toISOString().split('T')[0]} to ${lastBar.toISOString().split('T')[0]}`);
+          console.log(`   Will fetch missing data from API`);
           symbolsNeedingApiData.push(symbol);
         }
       } else {
@@ -59,11 +64,16 @@ export class StockCacheService {
       const alpacaAPI = createAlpacaAPI(apiKey, secretKey);
       
       try {
-        const apiData = await alpacaAPI.getStockBars(symbolsNeedingApiData, timeframe);
+        const apiData = await alpacaAPI.getStockBars(symbolsNeedingApiData, timeframe, startDate, endDate);
         
         // Step 3: Cache the new data
         for (const stockData of apiData) {
           if (stockData.bars.length > 0) {
+            const firstApiBar = new Date(stockData.bars[0].t);
+            const lastApiBar = new Date(stockData.bars[stockData.bars.length - 1].t);
+            console.log(`📥 API returned ${stockData.bars.length} bars for ${stockData.symbol}:`);
+            console.log(`   Range: ${firstApiBar.toISOString().split('T')[0]} to ${lastApiBar.toISOString().split('T')[0]}`);
+            
             await this.cacheStockBars(stockData.symbol, stockData.bars, timeframe);
             
             // Update or add to results
@@ -71,10 +81,13 @@ export class StockCacheService {
             if (existingIndex >= 0) {
               // Merge with existing cached data
               const mergedBars = this.mergeBars(results[existingIndex].bars, stockData.bars);
+              console.log(`🔄 Merged ${results[existingIndex].bars.length} cached + ${stockData.bars.length} API = ${mergedBars.length} total bars`);
               results[existingIndex].bars = mergedBars;
             } else {
               results.push(stockData);
             }
+          } else {
+            console.log(`⚠️ API returned 0 bars for ${stockData.symbol}`);
           }
         }
       } catch (error) {
@@ -153,19 +166,46 @@ export class StockCacheService {
     
     // Batch insert with upsert to handle duplicates
     const batchSize = 500;
+    let totalInserted = 0;
+    let totalBatches = Math.ceil(dbRecords.length / batchSize);
+    
     for (let i = 0; i < dbRecords.length; i += batchSize) {
       const batch = dbRecords.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
       
-      const { error } = await supabaseAdmin
+      console.log(`📦 Inserting batch ${batchNum}/${totalBatches} (${batch.length} records) for ${symbol}`);
+      
+      const { data, error } = await supabaseAdmin
         .from('stock_bars')
         .upsert(batch, {
           onConflict: 'symbol,timestamp,timeframe',
           ignoreDuplicates: false,
-        });
+        })
+        .select('id');
       
       if (error) {
-        console.error(`Error caching batch for ${symbol}:`, error);
+        console.error(`❌ Error caching batch ${batchNum}/${totalBatches} for ${symbol}:`, error);
+        console.error(`   Batch date range: ${batch[0].timestamp} to ${batch[batch.length-1].timestamp}`);
+      } else {
+        totalInserted += batch.length;
+        console.log(`✅ Successfully inserted batch ${batchNum}/${totalBatches} for ${symbol}`);
       }
+    }
+    
+    console.log(`📊 Total insertion summary for ${symbol}: ${totalInserted}/${dbRecords.length} records`);
+    
+    // Verify what's actually in the database after insertion
+    const { data: verifyData, error: verifyError } = await supabaseAdmin
+      .from('stock_bars')
+      .select('timestamp')
+      .eq('symbol', symbol)
+      .eq('timeframe', timeframe)
+      .order('timestamp', { ascending: true });
+    
+    if (!verifyError && verifyData) {
+      const first = new Date(verifyData[0]?.timestamp).toISOString().split('T')[0];
+      const last = new Date(verifyData[verifyData.length - 1]?.timestamp).toISOString().split('T')[0];
+      console.log(`🔍 Database verification for ${symbol}: ${verifyData.length} total records (${first} to ${last})`);
     }
     
     console.log(`✅ Successfully cached ${bars.length} bars for ${symbol}`);
