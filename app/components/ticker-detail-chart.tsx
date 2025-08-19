@@ -8,6 +8,7 @@ import { curveMonotoneX } from '@visx/curve';
 import { timeFormat } from 'd3-time-format';
 import { extent, bisector } from 'd3-array';
 import { CompanyLogo } from './company-logo';
+import { TimeRangeSelector } from './time-range-selector';
 import { calculateMovingAverages, COMMON_MA_PERIODS } from '../utils/technical-indicators';
 import type { StockData } from '../types/stock';
 import type { TickerNoteRow } from '../types/database';
@@ -319,7 +320,7 @@ export function TickerDetailChart({
       </div>
 
       {/* Chart */}
-      <div className="w-full bg-gray-50 rounded-lg p-4 relative">
+      <div className="w-full bg-gray-50 rounded-lg p-4">
         <svg 
           width={width} 
           height={height} 
@@ -507,12 +508,12 @@ export function TickerDetailChart({
                 Price: ${crosshair.price.toFixed(2)}
               </div>
               {Object.entries(crosshair.maValues).map(([period, value]) => {
-                const colors = {
+                const colors: Record<number, string> = {
                   20: 'text-amber-400',
                   50: 'text-red-400',
                   200: 'text-purple-400',
                 };
-                const colorClass = colors[period as keyof typeof colors] || 'text-gray-400';
+                const colorClass = colors[Number(period)] || 'text-gray-400';
                 
                 return (
                   <div key={period} className={colorClass}>
@@ -523,6 +524,11 @@ export function TickerDetailChart({
             </div>
           </div>
         )}
+      </div>
+      
+      {/* Time Range Selector - positioned below chart on the right */}
+      <div className="flex justify-end mt-4">
+        <TimeRangeSelector />
       </div>
     </div>
   );

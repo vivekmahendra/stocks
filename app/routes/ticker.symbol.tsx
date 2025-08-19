@@ -228,31 +228,19 @@ export default function TickerDetail() {
             )}
           </div>
           
-          <div className="flex items-center space-x-4">
-            <TimeRangeSelector />
-            {loadSource && (
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                  loadSource === 'cache' 
-                    ? 'bg-green-100 text-green-700' 
-                    : 'bg-blue-100 text-blue-700'
-                }`}>
-                  {loadSource === 'cache' ? '⚡ Cache' : '🌐 API'}
-                </span>
-                {loadTime && <span>{loadTime}ms</span>}
-              </div>
-            )}
-          </div>
+          {loadSource && (
+            <div className="flex items-center space-x-2 text-sm text-gray-500">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                loadSource === 'cache' 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-blue-100 text-blue-700'
+              }`}>
+                {loadSource === 'cache' ? '⚡ Cache' : '🌐 API'}
+              </span>
+              {loadTime && <span>{loadTime}ms</span>}
+            </div>
+          )}
         </div>
-
-        {/* Date Range Display */}
-        {dateRange && (
-          <div className="mb-6 text-center">
-            <span className="text-sm text-gray-600">
-              📅 {dateRange.startDate.toLocaleDateString()} - {dateRange.endDate.toLocaleDateString()}
-            </span>
-          </div>
-        )}
 
         {/* Main Content Grid */}
         <div className="space-y-8">
