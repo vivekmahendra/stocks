@@ -52,6 +52,27 @@ class RepurchaseService {
 
     return (data || []).reverse(); // Reverse to get chronological order
   }
+
+  async getRepurchasesInDateRange(
+    symbol: string, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<RepurchaseData[]> {
+    const { data, error } = await this.supabase
+      .from('common_stock_repurchases')
+      .select('symbol, date, period, fiscal_year, common_stock_repurchased')
+      .eq('symbol', symbol)
+      .gte('date', startDate.toISOString().split('T')[0])
+      .lte('date', endDate.toISOString().split('T')[0])
+      .order('date', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching repurchases in date range:', error);
+      return [];
+    }
+
+    return data || [];
+  }
 }
 
 export const repurchaseService = new RepurchaseService();

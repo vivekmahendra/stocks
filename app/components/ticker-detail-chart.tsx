@@ -5,7 +5,6 @@ import { scaleTime, scaleLinear } from '@visx/scale';
 import { AxisBottom, AxisLeft } from '@visx/axis';
 import { GridRows, GridColumns } from '@visx/grid';
 import { curveMonotoneX } from '@visx/curve';
-import { timeFormat } from 'd3-time-format';
 import { extent, bisector } from 'd3-array';
 import { CompanyLogo } from './company-logo';
 import { TimeRangeSelector } from './time-range-selector';

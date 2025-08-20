@@ -10,11 +10,12 @@ import { parseAlpacaDate, isTradingDay, formatMarketDate } from '../lib/market-t
 import { TimeRangeSelector } from './time-range-selector';
 import { useSearchParams } from "react-router";
 import type { StockData } from '../types/stock';
+import type { FinancialRatios } from '../services/financial-ratios';
 
-// Berkshire-specific time range selector that defaults to 5Y
+// Berkshire-specific time range selector that defaults to 1Y
 function BerkshireTimeRangeSelector() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentRange = searchParams.get("range") || "5Y"; // Default to 5Y for Berkshire
+  const currentRange = searchParams.get("range") || "1Y"; // Default to 1Y for Berkshire
 
   const timeRanges = [
     { label: "1W", value: "1W" },
@@ -24,6 +25,7 @@ function BerkshireTimeRangeSelector() {
     { label: "1yr", value: "1Y" },
     { label: "2yr", value: "2Y" },
     { label: "5yr", value: "5Y" },
+    { label: "Max", value: "MAX" },
   ];
 
   const handleRangeChange = (range: string) => {
@@ -59,24 +61,27 @@ function BerkshireTimeRangeSelector() {
 
 interface BerkshireChartProps {
   stockData: StockData;
+  ratiosData?: FinancialRatios[];
 }
 
 const margin = { top: 20, right: 80, bottom: 40, left: 60 };
 
-export function BerkshireChart({ stockData }: BerkshireChartProps) {
+export function BerkshireChart({ stockData, ratiosData = [] }: BerkshireChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
+  const [showBVPS, setShowBVPS] = useState(false);
   const [crosshair, setCrosshair] = useState<{
     x: number;
     y: number;
     date: Date;
     price: number;
     volume: number;
+    bvps?: number;
     visible: boolean;
   } | null>(null);
   
-  const currentRange = searchParams.get("range") || "5Y";
+  const currentRange = searchParams.get("range") || "1Y";
 
   // Function to get appropriate date format based on time range
   const getDateFormatter = (range: string) => {
@@ -102,6 +107,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
         });
       case "2Y":
       case "5Y":
+      case "MAX":
         return (date: Date) => date.getFullYear().toString();
       default:
         return (date: Date) => formatMarketDate(date, 'short');
@@ -165,6 +171,24 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
     }))
     .filter(d => isTradingDay(d.date));
 
+  // Process BVPS data - quarterly data points
+  // Filter to only include BVPS data within the stock data date range to prevent overflow
+  const stockDateExtent = data.length > 0 ? extent(data, d => d.date) as [Date, Date] : [new Date(), new Date()];
+  
+  const bvpsData = ratiosData
+    .filter(r => r.book_value_per_share !== null)
+    .map(r => ({
+      date: new Date(r.date),
+      bvps: r.book_value_per_share!,
+      period: r.period,
+      fiscalYear: r.fiscal_year,
+    }))
+    .filter(d => {
+      // Only include BVPS data within the stock data date range
+      return data.length === 0 || (d.date >= stockDateExtent[0] && d.date <= stockDateExtent[1]);
+    })
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
   const latestPrice = data[data.length - 1]?.price;
   const firstPrice = data[0]?.price;
   const change = latestPrice && firstPrice ? latestPrice - firstPrice : 0;
@@ -183,6 +207,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
   const dateExtent = extent(data, d => d.date) as [Date, Date];
   const priceExtent = extent(data, d => d.price) as [number, number];
   const volumeExtent = extent(data, d => d.volume) as [number, number];
+  const bvpsExtent = bvpsData.length > 0 ? extent(bvpsData, d => d.bvps) as [number, number] : [0, 0];
   
   const dateRange = dateExtent[1].getTime() - dateExtent[0].getTime();
   const padding = dateRange * 0.02;
@@ -192,11 +217,20 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
   ];
   
   // Add padding to price domain to prevent markers from being cut off
-  const priceRange = priceExtent[1] - priceExtent[0];
+  // Include BVPS range if showing BVPS
+  let minPrice = priceExtent[0];
+  let maxPrice = priceExtent[1];
+  
+  if (showBVPS && bvpsData.length > 0) {
+    minPrice = Math.min(minPrice, bvpsExtent[0]);
+    maxPrice = Math.max(maxPrice, bvpsExtent[1]);
+  }
+  
+  const priceRange = maxPrice - minPrice;
   const pricePadding = priceRange * 0.1; // 10% padding on top and bottom
   const extendedPriceDomain: [number, number] = [
-    priceExtent[0] - pricePadding,
-    priceExtent[1] + pricePadding
+    minPrice - pricePadding,
+    maxPrice + pricePadding
   ];
   
   const xScale = scaleTime({
@@ -221,6 +255,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
   const getPrice = (d: typeof data[0]) => d.price;
 
   const bisectDate = bisector<typeof data[0], Date>((d) => d.date).left;
+  const bisectBVPSDate = bisector<typeof bvpsData[0], Date>((d) => d.date).left;
 
   const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     const svg = event.currentTarget;
@@ -255,12 +290,27 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
     const d = !d0 ? d1 : !d1 ? d0 : 
       mouseDate.getTime() - d0.date.getTime() > d1.date.getTime() - mouseDate.getTime() ? d1 : d0;
 
+    // Find closest BVPS data point if showing BVPS
+    let closestBVPS: number | undefined;
+    if (showBVPS && bvpsData.length > 0) {
+      const bvpsIndex = bisectBVPSDate(bvpsData, mouseDate);
+      const bvps0 = bvpsData[bvpsIndex - 1];
+      const bvps1 = bvpsData[bvpsIndex];
+      
+      if (bvps0 || bvps1) {
+        const closestBVPSData = !bvps0 ? bvps1 : !bvps1 ? bvps0 :
+          mouseDate.getTime() - bvps0.date.getTime() > bvps1.date.getTime() - mouseDate.getTime() ? bvps1 : bvps0;
+        closestBVPS = closestBVPSData.bvps;
+      }
+    }
+
     setCrosshair({
       x: xScale(d.date) ?? 0,
       y: yScale(d.price) ?? 0,
       date: d.date,
       price: d.price,
       volume: d.volume,
+      bvps: closestBVPS,
       visible: true,
     });
   }, [data, xScale, yScale, innerWidth, innerHeight, bisectDate, width, height]);
@@ -273,9 +323,23 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
     <div className="bg-white rounded-lg border border-gray-200 p-6" ref={containerRef}>
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-800">
-            ${stockData.symbol}
-          </h3>
+          <div className="flex items-center space-x-4">
+            <h3 className="text-xl font-semibold text-gray-800">
+              ${stockData.symbol}
+            </h3>
+            {ratiosData.length > 0 && (
+              <button
+                onClick={() => setShowBVPS(!showBVPS)}
+                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                  showBVPS 
+                    ? 'bg-green-100 text-green-800 border border-green-300' 
+                    : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                Book Value
+              </button>
+            )}
+          </div>
           <div className="flex items-center space-x-2">
             <span className="text-2xl font-bold text-gray-900">
               ${latestPrice?.toFixed(2)}
@@ -325,6 +389,32 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
               strokeWidth={2}
               curve={curveMonotoneX}
             />
+
+            {/* BVPS Line - only show if toggled on */}
+            {showBVPS && bvpsData.length > 0 && (
+              <LinePath
+                data={bvpsData}
+                x={d => xScale(d.date) ?? 0}
+                y={d => yScale(d.bvps) ?? 0}
+                stroke="#059669"
+                strokeWidth={2}
+                strokeDasharray="5,5"
+                curve={curveMonotoneX}
+              />
+            )}
+
+            {/* BVPS Data Points */}
+            {showBVPS && bvpsData.map((d, i) => (
+              <circle
+                key={`bvps-point-${i}`}
+                cx={xScale(d.date)}
+                cy={yScale(d.bvps)}
+                r={3}
+                fill="#059669"
+                stroke="white"
+                strokeWidth={1}
+              />
+            ))}
 
             {/* High Point Marker */}
             {highPoint && (
@@ -396,7 +486,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
               tickFormat={(value) => dateFormatter(value as Date)}
               stroke="#6b7280"
               tickStroke="#6b7280"
-              numTicks={currentRange === '5Y' || currentRange === '2Y' ? 6 : 8}
+              numTicks={currentRange === '5Y' || currentRange === '2Y' || currentRange === 'MAX' ? 6 : 8}
               tickLabelProps={() => ({
                 fill: '#6b7280',
                 fontSize: 11,
@@ -429,7 +519,6 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
                 return num.toString();
               }}
               stroke="#9ca3af"
-              strokeOpacity={0.7}
               tickStroke="#9ca3af"
               numTicks={3}
               tickLabelProps={() => ({
@@ -502,6 +591,11 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
                     ? `${(crosshair.volume / 1000).toFixed(0)}K`
                     : crosshair.volume.toLocaleString()}
               </div>
+              {showBVPS && crosshair.bvps && (
+                <div className="text-green-400 font-medium">
+                  Book Value: ${crosshair.bvps.toFixed(2)}
+                </div>
+              )}
             </div>
           </div>
         )}

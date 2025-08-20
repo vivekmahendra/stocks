@@ -3,6 +3,7 @@ import { BerkshireChart } from "./berkshire-chart";
 import { TickerNotes } from "./ticker-notes";
 import { RepurchaseHistogram } from "./repurchase-histogram";
 import type { RepurchaseData } from "../services/repurchases";
+import type { FinancialRatios } from "../services/financial-ratios";
 
 interface BerkshireHathawayPageProps {
   symbol: string;
@@ -16,6 +17,7 @@ interface BerkshireHathawayPageProps {
   loadTime: number | null;
   error: string | null;
   repurchaseData: RepurchaseData[];
+  ratiosData: FinancialRatios[];
 }
 
 export function BerkshireHathawayPage({
@@ -25,6 +27,7 @@ export function BerkshireHathawayPage({
   loadSource,
   error,
   repurchaseData,
+  ratiosData,
 }: BerkshireHathawayPageProps) {
   if (error || !stockData) {
     return (
@@ -138,11 +141,11 @@ export function BerkshireHathawayPage({
         </div>
 
         <div className="mb-8">
-          <BerkshireChart stockData={stockData} />
+          <BerkshireChart stockData={stockData} ratiosData={ratiosData} />
         </div>
 
         <div className="mb-8">
-          <RepurchaseHistogram data={repurchaseData} />
+          <RepurchaseHistogram data={repurchaseData} ratiosData={ratiosData} />
         </div>
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 p-6">

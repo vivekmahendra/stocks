@@ -17,11 +17,12 @@ const timeRanges: TimeRange[] = [
   { label: "1yr", value: "1Y", months: 12 },
   { label: "2yr", value: "2Y", months: 24 },
   { label: "5yr", value: "5Y", months: 60 },
+  { label: "Max", value: "MAX" }, // Special case - goes back to 2018
 ];
 
 export function TimeRangeSelector() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentRange = searchParams.get("range") || "3M";
+  const currentRange = searchParams.get("range") || "1Y";
 
   const handleRangeChange = (range: string) => {
     const newParams = new URLSearchParams(searchParams);
@@ -58,7 +59,13 @@ export function getDateRangeFromParam(rangeParam: string | null): { startDate: D
   const endDate = getMarketTime(); // Use market time instead of system time
   const startDate = new Date(endDate);
   
-  const range = timeRanges.find(r => r.value === rangeParam) || timeRanges.find(r => r.value === "3M")!;
+  // Handle special MAX case - go back to 2018
+  if (rangeParam === "MAX") {
+    startDate.setFullYear(2018, 0, 1); // January 1, 2018
+    return { startDate, endDate };
+  }
+  
+  const range = timeRanges.find(r => r.value === rangeParam) || timeRanges.find(r => r.value === "1Y")!;
   
   if (range.days) {
     startDate.setDate(startDate.getDate() - range.days);

@@ -11,6 +11,7 @@ import { watchlistService } from "../services/watchlist";
 import { notesService } from "../services/notes";
 import { getLogoService } from "../services/logo";
 import { repurchaseService } from "../services/repurchases";
+import { financialRatiosService } from "../services/financial-ratios";
 import type { StockData } from "../types/stock";
 
 export function meta({ params }: Route.MetaArgs) {
@@ -49,7 +50,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     try {
       const result = await notesService.addNote(symbol, noteText, noteType);
       if (result) {
-        console.log(`✅ Added note for ${symbol}`);
         return redirect(`/ticker/${symbol}`);
       } else {
         return { error: "Failed to add note" };
@@ -75,7 +75,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         note_type: noteType,
       });
       if (result) {
-        console.log(`✅ Updated note ${noteId}`);
         return redirect(`/ticker/${symbol}`);
       } else {
         return { error: "Failed to update note" };
@@ -96,7 +95,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     try {
       const result = await notesService.deleteNote(noteId);
       if (result) {
-        console.log(`✅ Deleted note ${noteId}`);
         return redirect(`/ticker/${symbol}`);
       } else {
         return { error: "Failed to delete note" };
@@ -117,7 +115,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
 
-  console.log(`🔄 Loading ticker detail for ${symbol}`);
 
   const url = new URL(request.url);
   const rangeParam = url.searchParams.get("range");
@@ -136,51 +133,61 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
     // Calculate date range based on URL parameter
     const { startDate, endDate } = getDateRangeFromParam(rangeParam);
+    
+    // For MAX range and Berkshire, override stock data dates to go back to 2018
+    let stockDataStartDate = startDate;
+    let stockDataEndDate = endDate;
+    
+    if (symbol === 'BRK.B' && rangeParam === 'MAX') {
+      stockDataStartDate = new Date(2018, 0, 1); // January 1, 2018
+      stockDataEndDate = new Date(); // Today
+    }
 
     // Fetch stock data, watchlist info, notes, logo, and company narrative in parallel
     const logoService = getLogoService();
     let companyNarrative = null;
     
-    // For Berkshire, also fetch repurchase data
-    const promises = [
-      stockCacheService.fetchAndCacheStockData([symbol], startDate, endDate, '1Day'),
+    // Fetch core data in parallel
+    const [stockResult, watchlistDetails, notes, logoUrl] = await Promise.all([
+      stockCacheService.fetchAndCacheStockData([symbol], stockDataStartDate, stockDataEndDate, '1Day'),
       watchlistService.getWatchlist(),
       notesService.getNotesBySymbol(symbol),
       logoService ? logoService.getLogoUrl(symbol) : Promise.resolve(null),
-    ];
+    ]);
+    
+    // For Berkshire, also fetch repurchase and ratios data separately to avoid typing issues
+    let repurchaseData: any[] = [];
+    let ratiosData: any[] = [];
     
     if (symbol === 'BRK.B') {
-      promises.push(repurchaseService.getRecentRepurchases('BRK-B', 20));
+      // For Berkshire, get 10 years of data regardless of time range selector
+      const tenYearsAgo = new Date();
+      tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+      const today = new Date();
+      
+      [repurchaseData, ratiosData] = await Promise.all([
+        repurchaseService.getRepurchasesInDateRange('BRK-B', tenYearsAgo, today),
+        financialRatiosService.getRatiosInDateRange('BRK-B', tenYearsAgo, today)
+      ]);
     }
-    
-    const results = await Promise.all(promises);
-    const [stockResult, watchlistDetails, notes, logoUrl, repurchaseData] = results;
     
     // Fetch company narrative server-side
     try {
       const { companyNarrativeService } = await import('../services/company-narrative');
       companyNarrative = await companyNarrativeService.getCompanyNarrative(symbol);
-      console.log('✅ Company narrative loaded:', companyNarrative ? 'success' : 'no data');
     } catch (error) {
       console.error('⚠️ Could not load company narrative:', error);
       // Continue without narrative - this is not critical for basic functionality
     }
 
-    const stockData = stockResult.data.find(s => s.symbol === symbol);
+    const stockData = stockResult.data.find((s: any) => s.symbol === symbol);
     if (!stockData) {
       throw new Response(`No data found for ${symbol}`, { status: 404 });
     }
 
-    const watchlistEntry = watchlistDetails.find(w => w.symbol === symbol);
+    const watchlistEntry = watchlistDetails.find((w: any) => w.symbol === symbol);
     const loadTime = Date.now() - loadStartTime;
 
-    console.log(`✅ Successfully loaded ticker detail for ${symbol}:`, {
-      bars: stockData.bars.length,
-      notes: notes.length,
-      loadSource: stockResult.loadedFromCache ? 'cache' : 'api',
-      loadTime: `${loadTime}ms`,
-      logoFound: !!logoUrl,
-    });
 
     return {
       symbol,
@@ -193,7 +200,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       loadSource: stockResult.loadedFromCache ? 'cache' : 'api',
       loadTime,
       error: null,
-      repurchaseData: symbol === 'BRK.B' ? (repurchaseData || []) : [],
+      repurchaseData,
+      ratiosData,
     };
   } catch (error) {
     console.error(`❌ Error loading ticker detail for ${symbol}:`, error);
@@ -214,13 +222,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       loadTime: null,
       error: error instanceof Error ? error.message : 'Failed to load ticker data',
       repurchaseData: [],
+      ratiosData: [],
     };
   }
 }
 
 
 export default function TickerDetail() {
-  const { symbol, stockData, watchlistEntry, notes, logoUrl, companyNarrative, dateRange, loadSource, loadTime, error, repurchaseData } = useLoaderData<typeof loader>();
+  const { symbol, stockData, watchlistEntry, notes, logoUrl, companyNarrative, dateRange, loadSource, loadTime, error, repurchaseData, ratiosData } = useLoaderData<typeof loader>();
 
   // If this is BRK.B, render the completely different Berkshire page
   if (symbol === 'BRK.B') {
@@ -236,6 +245,7 @@ export default function TickerDetail() {
       loadTime={loadTime}
       error={error}
       repurchaseData={repurchaseData}
+      ratiosData={ratiosData}
     />;
   }
 
@@ -345,7 +355,7 @@ export default function TickerDetail() {
           <div className="text-center text-xs text-gray-400">
             <div className="flex flex-wrap justify-center items-center gap-3">
               <span>📊 {stockData.bars.length} price bars</span>
-              <span>📝 {notes.length} notes</span>
+              <span>📝 {Array.isArray(notes) ? notes.length : 0} notes</span>
               {dateRange && (
                 <span>📅 {Math.ceil((dateRange.endDate.getTime() - dateRange.startDate.getTime()) / (1000 * 60 * 60 * 24))} days</span>
               )}
