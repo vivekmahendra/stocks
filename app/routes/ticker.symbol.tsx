@@ -10,6 +10,7 @@ import { stockCacheService } from "../services/stock-cache";
 import { watchlistService } from "../services/watchlist";
 import { notesService } from "../services/notes";
 import { getLogoService } from "../services/logo";
+import { repurchaseService } from "../services/repurchases";
 import type { StockData } from "../types/stock";
 
 export function meta({ params }: Route.MetaArgs) {
@@ -140,12 +141,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const logoService = getLogoService();
     let companyNarrative = null;
     
-    const [stockResult, watchlistDetails, notes, logoUrl] = await Promise.all([
+    // For Berkshire, also fetch repurchase data
+    const promises = [
       stockCacheService.fetchAndCacheStockData([symbol], startDate, endDate, '1Day'),
       watchlistService.getWatchlist(),
       notesService.getNotesBySymbol(symbol),
       logoService ? logoService.getLogoUrl(symbol) : Promise.resolve(null),
-    ]);
+    ];
+    
+    if (symbol === 'BRK.B') {
+      promises.push(repurchaseService.getRecentRepurchases('BRK-B', 20));
+    }
+    
+    const results = await Promise.all(promises);
+    const [stockResult, watchlistDetails, notes, logoUrl, repurchaseData] = results;
     
     // Fetch company narrative server-side
     try {
@@ -184,6 +193,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       loadSource: stockResult.loadedFromCache ? 'cache' : 'api',
       loadTime,
       error: null,
+      repurchaseData: symbol === 'BRK.B' ? (repurchaseData || []) : [],
     };
   } catch (error) {
     console.error(`❌ Error loading ticker detail for ${symbol}:`, error);
@@ -203,13 +213,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       loadSource: null,
       loadTime: null,
       error: error instanceof Error ? error.message : 'Failed to load ticker data',
+      repurchaseData: [],
     };
   }
 }
 
 
 export default function TickerDetail() {
-  const { symbol, stockData, watchlistEntry, notes, logoUrl, companyNarrative, dateRange, loadSource, loadTime, error } = useLoaderData<typeof loader>();
+  const { symbol, stockData, watchlistEntry, notes, logoUrl, companyNarrative, dateRange, loadSource, loadTime, error, repurchaseData } = useLoaderData<typeof loader>();
 
   // If this is BRK.B, render the completely different Berkshire page
   if (symbol === 'BRK.B') {
@@ -224,6 +235,7 @@ export default function TickerDetail() {
       loadSource={loadSource}
       loadTime={loadTime}
       error={error}
+      repurchaseData={repurchaseData}
     />;
   }
 

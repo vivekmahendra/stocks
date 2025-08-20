@@ -8,7 +8,54 @@ import { curveMonotoneX } from '@visx/curve';
 import { extent, bisector } from 'd3-array';
 import { parseAlpacaDate, isTradingDay, formatMarketDate } from '../lib/market-time';
 import { TimeRangeSelector } from './time-range-selector';
+import { useSearchParams } from "react-router";
 import type { StockData } from '../types/stock';
+
+// Berkshire-specific time range selector that defaults to 5Y
+function BerkshireTimeRangeSelector() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentRange = searchParams.get("range") || "5Y"; // Default to 5Y for Berkshire
+
+  const timeRanges = [
+    { label: "1W", value: "1W" },
+    { label: "1mo", value: "1M" },
+    { label: "3mo", value: "3M" },
+    { label: "6mo", value: "6M" },
+    { label: "1yr", value: "1Y" },
+    { label: "2yr", value: "2Y" },
+    { label: "5yr", value: "5Y" },
+  ];
+
+  const handleRangeChange = (range: string) => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("range", range);
+    setSearchParams(newParams);
+  };
+
+  return (
+    <div className="inline-flex items-center bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+      {timeRanges.map((range, index) => (
+        <button
+          key={range.value}
+          onClick={() => handleRangeChange(range.value)}
+          className={`
+            relative px-3 py-1.5 text-xs font-semibold transition-all duration-200
+            ${currentRange === range.value
+              ? "bg-gray-900 text-white rounded-md"
+              : "text-gray-600 hover:text-gray-900"
+            }
+            ${index !== 0 && currentRange !== range.value && timeRanges[index - 1].value !== currentRange 
+              ? "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-px before:bg-gray-200" 
+              : ""
+            }
+          `}
+        >
+          {range.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface BerkshireChartProps {
   stockData: StockData;
@@ -18,6 +65,7 @@ const margin = { top: 20, right: 80, bottom: 40, left: 60 };
 
 export function BerkshireChart({ stockData }: BerkshireChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [searchParams] = useSearchParams();
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
   const [crosshair, setCrosshair] = useState<{
     x: number;
@@ -27,6 +75,40 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
     volume: number;
     visible: boolean;
   } | null>(null);
+  
+  const currentRange = searchParams.get("range") || "5Y";
+
+  // Function to get appropriate date format based on time range
+  const getDateFormatter = (range: string) => {
+    switch (range) {
+      case "1D":
+      case "1W":
+        return (date: Date) => date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric',
+          hour: 'numeric'
+        });
+      case "1M":
+      case "3M":
+        return (date: Date) => date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        });
+      case "6M":
+      case "1Y":
+        return (date: Date) => date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          year: '2-digit' 
+        });
+      case "2Y":
+      case "5Y":
+        return (date: Date) => date.getFullYear().toString();
+      default:
+        return (date: Date) => formatMarketDate(date, 'short');
+    }
+  };
+
+  const dateFormatter = getDateFormatter(currentRange);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -303,7 +385,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
                   width={barWidth}
                   height={innerHeight - volumeScale(d.volume)}
                   fill="#6b7280"
-                  fillOpacity={0.15}
+                  fillOpacity={0.25}
                 />
               );
             })}
@@ -311,10 +393,10 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
             <AxisBottom
               top={innerHeight}
               scale={xScale}
-              tickFormat={(value) => formatMarketDate(value as Date, 'short')}
+              tickFormat={(value) => dateFormatter(value as Date)}
               stroke="#6b7280"
               tickStroke="#6b7280"
-              numTicks={8}
+              numTicks={currentRange === '5Y' || currentRange === '2Y' ? 6 : 8}
               tickLabelProps={() => ({
                 fill: '#6b7280',
                 fontSize: 11,
@@ -426,7 +508,7 @@ export function BerkshireChart({ stockData }: BerkshireChartProps) {
       </div>
       
       <div className="flex justify-end mt-4">
-        <TimeRangeSelector />
+        <BerkshireTimeRangeSelector />
       </div>
     </div>
   );

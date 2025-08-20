@@ -1,6 +1,8 @@
 import { Link } from "react-router";
 import { BerkshireChart } from "./berkshire-chart";
 import { TickerNotes } from "./ticker-notes";
+import { RepurchaseHistogram } from "./repurchase-histogram";
+import type { RepurchaseData } from "../services/repurchases";
 
 interface BerkshireHathawayPageProps {
   symbol: string;
@@ -13,6 +15,7 @@ interface BerkshireHathawayPageProps {
   loadSource: string | null;
   loadTime: number | null;
   error: string | null;
+  repurchaseData: RepurchaseData[];
 }
 
 export function BerkshireHathawayPage({
@@ -21,6 +24,7 @@ export function BerkshireHathawayPage({
   notes,
   loadSource,
   error,
+  repurchaseData,
 }: BerkshireHathawayPageProps) {
   if (error || !stockData) {
     return (
@@ -135,6 +139,10 @@ export function BerkshireHathawayPage({
 
         <div className="mb-8">
           <BerkshireChart stockData={stockData} />
+        </div>
+
+        <div className="mb-8">
+          <RepurchaseHistogram data={repurchaseData} />
         </div>
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 p-6">

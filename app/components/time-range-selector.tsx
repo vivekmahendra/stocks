@@ -16,6 +16,7 @@ const timeRanges: TimeRange[] = [
   { label: "6mo", value: "6M", months: 6 },
   { label: "1yr", value: "1Y", months: 12 },
   { label: "2yr", value: "2Y", months: 24 },
+  { label: "5yr", value: "5Y", months: 60 },
 ];
 
 export function TimeRangeSelector() {
